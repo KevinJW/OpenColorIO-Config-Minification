@@ -35,6 +35,7 @@ from ocio_minifier.verification import (
     DEFAULT_PIXEL_GRID,
     HAS_OCIO,
     FidelityVerifier,
+    ocio,
     verify_dag_fidelity,
 )
 
@@ -61,6 +62,7 @@ __all__ = [
     "YamlAnchorsTransform",
     "__version__",
     "format_markdown_table",
+    "ocio",
     "run_benchmark",
     "transform_compact_amf_scalars",
     "transform_elide_defaults",

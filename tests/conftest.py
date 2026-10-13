@@ -14,7 +14,7 @@ SAMPLE_CONFIG_PATH = (
 @pytest.fixture(scope="session")
 def ocio_module():
     """Import and return the core minification module."""
-    return importlib.import_module("gemini-code-1791882948890")
+    return importlib.import_module("ocio_minifier")
 
 
 @pytest.fixture(scope="session")
