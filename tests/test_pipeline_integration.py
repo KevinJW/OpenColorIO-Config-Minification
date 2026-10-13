@@ -1,4 +1,8 @@
+import os
+
 import pytest
+
+from tests.test_basic import ALL_CONFIG_FILES
 
 
 @pytest.mark.skipif(
@@ -135,3 +139,25 @@ class TestPipelineIntegration:
         assert passed is True
         assert max_delta == 0.0
         assert len(fails) == 0
+
+    @pytest.mark.parametrize("config_filename", ALL_CONFIG_FILES)
+    def test_pipeline_syntactic_fidelity_all_configs(
+        self, ocio_module, config_filename
+    ):
+        """Verify lossless syntactic pipeline yields 100% DAG fidelity across all builtin configs."""
+        config_path = os.path.join("configs", config_filename)
+        with open(config_path, encoding="utf-8") as f:
+            source_text = f.read()
+
+        orig_cfg = ocio_module.ocio.Config.CreateFromStream(source_text)
+        orig_cfg.validate()
+
+        pipeline = ocio_module.MinificationPipeline.preset_syntactic()
+        minified_text = pipeline.run(source_text)
+
+        min_cfg = ocio_module.ocio.Config.CreateFromStream(minified_text)
+        min_cfg.validate()
+
+        passed, max_delta, fails = ocio_module.verify_dag_fidelity(orig_cfg, min_cfg)
+        assert passed is True, f"Fidelity failed for {config_filename}: {fails[:3]}"
+        assert max_delta == 0.0
