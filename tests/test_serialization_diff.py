@@ -3,8 +3,10 @@ from pathlib import Path
 import pytest
 
 from ocio_minifier.cli import main
+from ocio_minifier.pipeline import MinificationPipeline
 from ocio_minifier.transforms.amf import transform_compact_amf_scalars
 from ocio_minifier.transforms.cdl import transform_flow_cdl_transforms
+from ocio_minifier.transforms.defaults import transform_elide_defaults
 from ocio_minifier.transforms.descriptions import transform_strip_descriptions
 from ocio_minifier.transforms.flow import transform_flow_transforms
 from ocio_minifier.transforms.precision import transform_float_precision
@@ -29,8 +31,13 @@ def test_diff_serialized_identical_configs(minimal_ocio_yaml):
 
 @pytest.mark.skipif(not HAS_OCIO, reason="PyOpenColorIO required")
 def test_diff_serialized_lossless_transforms_produce_zero_diff(sample_config_text):
-    """Lossless transforms (anchors, AMF, flow, CDL) must yield 100% identical serialized OCIO profiles."""
+    """Lossless transforms and full syntactic pipeline must yield 100% identical serialized OCIO profiles."""
     orig_cfg = ocio.Config.CreateFromStream(sample_config_text)
+
+    # Test Default Field Elision
+    elide_text = transform_elide_defaults(sample_config_text)
+    elide_cfg = ocio.Config.CreateFromStream(elide_text)
+    assert diff_serialized_configs(orig_cfg, elide_cfg) == ""
 
     # Test YAML Anchors
     anchored_text = transform_yaml_anchors(sample_config_text)
@@ -51,6 +58,12 @@ def test_diff_serialized_lossless_transforms_produce_zero_diff(sample_config_tex
     cdl_text = transform_flow_cdl_transforms(sample_config_text)
     cdl_cfg = ocio.Config.CreateFromStream(cdl_text)
     assert diff_serialized_configs(orig_cfg, cdl_cfg) == ""
+
+    # Test Entire Lossless Syntactic Pipeline
+    pipeline = MinificationPipeline.preset_syntactic()
+    syntactic_min = pipeline.run(sample_config_text)
+    syntactic_cfg = ocio.Config.CreateFromStream(syntactic_min)
+    assert diff_serialized_configs(orig_cfg, syntactic_cfg) == ""
 
 
 @pytest.mark.skipif(not HAS_OCIO, reason="PyOpenColorIO required")

@@ -9,7 +9,7 @@ class ElideDefaultsTransform:
     name: str = "Default Field Elision"
     description: str = (
         "Removes redundant default fields (equalitygroup: '', allocation: uniform, "
-        "isdata: false, bitdepth: 32f, and compacts empty environments)"
+        "isdata: false, and compacts empty environments)"
     )
     is_lossy: bool = False
 
@@ -31,13 +31,6 @@ class ElideDefaultsTransform:
         # Strip isdata: false
         content = re.sub(
             r"^[ \t]*isdata:\s*false\r?\n",
-            "",
-            content,
-            flags=re.MULTILINE,
-        )
-        # Strip bitdepth: 32f
-        content = re.sub(
-            r"^[ \t]*bitdepth:\s*32f\r?\n",
             "",
             content,
             flags=re.MULTILINE,

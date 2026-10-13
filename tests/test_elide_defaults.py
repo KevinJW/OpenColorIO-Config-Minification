@@ -44,11 +44,11 @@ def test_elide_isdata_false(ocio_module):
     assert "isdata: true" in result
 
 
-def test_elide_bitdepth_32f(ocio_module):
-    """bitdepth: 32f should be removed, other bitdepths preserved."""
+def test_preserve_bitdepth(ocio_module):
+    """bitdepth: 32f, 16f, 8ui must all be preserved (omitting bitdepth changes it to unknown in OCIO)."""
     yaml_src = "  bitdepth: 32f\n  bitdepth: 16f\n  bitdepth: 8ui\n"
     result = ocio_module.transform_elide_defaults(yaml_src)
-    assert "bitdepth: 32f" not in result
+    assert "bitdepth: 32f" in result
     assert "bitdepth: 16f" in result
     assert "bitdepth: 8ui" in result
 
@@ -88,7 +88,7 @@ def test_elide_defaults_crlf_handling(ocio_module):
     result = ocio_module.transform_elide_defaults(yaml_src)
     assert "allocation: uniform" not in result
     assert "isdata: false" not in result
-    assert "bitdepth: 32f" not in result
+    assert "bitdepth: 32f" in result
     assert "name: Test" in result
 
 
