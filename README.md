@@ -22,15 +22,11 @@ py -m venv .venv
 
 ### Dependency Installation
 
-Install the package and development dependencies:
+Install the package and development dependencies using pip:
 
 ```powershell
-# Using pip with optional dependencies defined in pyproject.toml
 python -m pip install --upgrade pip
 python -m pip install -e .[dev]
-
-# Alternatively via requirements-dev.txt:
-python -m pip install -r requirements-dev.txt
 ```
 
 ### Git Pre-Commit Hooks
