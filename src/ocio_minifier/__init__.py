@@ -39,6 +39,7 @@ from ocio_minifier.verification import (
     DEFAULT_PIXEL_GRID,
     HAS_OCIO,
     FidelityVerifier,
+    diff_serialized_configs,
     ocio,
     verify_dag_fidelity,
 )
@@ -67,6 +68,7 @@ __all__ = [
     "VerificationResult",
     "YamlAnchorsTransform",
     "__version__",
+    "diff_serialized_configs",
     "format_markdown_table",
     "ocio",
     "run_benchmark",

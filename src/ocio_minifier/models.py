@@ -31,6 +31,7 @@ class VerificationResult:
     evaluated_spaces: int = 0
     evaluated_views: int = 0
     failures: list[ConversionFailure] = field(default_factory=list)
+    serialized_diff: str | None = None
 
     @property
     def failure_count(self) -> int:

@@ -1,5 +1,6 @@
 """Mathematical DAG fidelity verification engine using PyOpenColorIO."""
 
+import difflib
 import math
 from typing import Any
 
@@ -30,10 +31,22 @@ class FidelityVerifier:
         pixel_grid: list[tuple[float, float, float]] | None = None,
         tolerance: float = 1e-6,
         check_inverse: bool = True,
+        include_serialized_diff: bool = False,
     ):
         self.pixel_grid = pixel_grid or list(DEFAULT_PIXEL_GRID)
         self.tolerance = tolerance
         self.check_inverse = check_inverse
+        self.include_serialized_diff = include_serialized_diff
+
+    def diff_serialized(
+        self,
+        orig_cfg: Any,
+        candidate_cfg: Any,
+        from_label: str = "original_serialized.ocio",
+        to_label: str = "minified_serialized.ocio",
+    ) -> str:
+        """Serialize both configs using PyOpenColorIO and return a unified diff."""
+        return diff_serialized_configs(orig_cfg, candidate_cfg, from_label, to_label)
 
     def verify(self, orig_cfg: Any, candidate_cfg: Any) -> VerificationResult:
         """Evaluate pixel parity between orig_cfg and candidate_cfg."""
@@ -201,6 +214,14 @@ class FidelityVerifier:
                     )
 
         passed = len(failures) == 0
+
+        serialized_diff: str | None = None
+        if self.include_serialized_diff:
+            try:
+                serialized_diff = diff_serialized_configs(orig_cfg, candidate_cfg)
+            except Exception as e:
+                serialized_diff = f"Error generating serialization diff: {e}"
+
         return VerificationResult(
             passed=passed,
             max_delta=max_delta,
@@ -208,7 +229,34 @@ class FidelityVerifier:
             evaluated_spaces=evaluated_spaces,
             evaluated_views=evaluated_views,
             failures=failures,
+            serialized_diff=serialized_diff,
         )
+
+
+def diff_serialized_configs(
+    orig_cfg: Any,
+    candidate_cfg: Any,
+    from_label: str = "original_serialized.ocio",
+    to_label: str = "minified_serialized.ocio",
+) -> str:
+    """Serialize orig_cfg and candidate_cfg using PyOpenColorIO and return a unified diff."""
+    if not HAS_OCIO or orig_cfg is None or candidate_cfg is None:
+        raise ValueError(
+            "PyOpenColorIO is required and both configurations must be non-None"
+        )
+
+    orig_text = orig_cfg.serialize()
+    cand_text = candidate_cfg.serialize()
+
+    diff_lines = list(
+        difflib.unified_diff(
+            orig_text.splitlines(keepends=True),
+            cand_text.splitlines(keepends=True),
+            fromfile=from_label,
+            tofile=to_label,
+        )
+    )
+    return "".join(diff_lines)
 
 
 def verify_dag_fidelity(

@@ -9,7 +9,12 @@ from collections.abc import Sequence
 from ocio_minifier import __version__
 from ocio_minifier.benchmark import BenchmarkRunner, format_markdown_table
 from ocio_minifier.pipeline import MinificationPipeline
-from ocio_minifier.verification import HAS_OCIO, FidelityVerifier, ocio
+from ocio_minifier.verification import (
+    HAS_OCIO,
+    FidelityVerifier,
+    diff_serialized_configs,
+    ocio,
+)
 
 DEFAULT_CONFIG_PATH = os.path.join(
     "configs", "studio-config-all-views-v4.0.0_aces-v2.0_ocio-v2.5.ocio"
@@ -75,6 +80,11 @@ def create_parser() -> argparse.ArgumentParser:
         action=argparse.BooleanOptionalAction,
         default=True,
         help="Preserve row sums (unity gain) and channel symmetry during float rounding (default: True)",
+    )
+    parser.add_argument(
+        "--diff",
+        action="store_true",
+        help="Serialize original and minified configs using PyOpenColorIO and display unified diff",
     )
     parser.add_argument(
         "--version",
@@ -158,6 +168,32 @@ def main(argv: Sequence[str] | None = None) -> int:
         sys.stderr.write(
             f"Fidelity Verification PASSED (Max ΔRGB = {res.max_delta:.2e})\n"
         )
+
+    # Optional Serialized Configuration Diff
+    if args.diff:
+        if not HAS_OCIO:
+            sys.stderr.write(
+                "Error: PyOpenColorIO is required to serialize and diff configurations.\n"
+            )
+            return 1
+        try:
+            orig_cfg = ocio.Config.CreateFromStream(source_content)
+            orig_cfg.validate()
+            cand_cfg = ocio.Config.CreateFromStream(minified)
+            cand_cfg.validate()
+            diff_text = diff_serialized_configs(orig_cfg, cand_cfg)
+            if diff_text:
+                sys.stdout.write(diff_text)
+            else:
+                sys.stderr.write(
+                    "Serialized configurations are semantically identical (0 diff lines).\n"
+                )
+        except Exception as e:
+            sys.stderr.write(f"Diff generation failed: {e}\n")
+            return 1
+
+        if not args.output:
+            return 0
 
     # Output Handling
     if args.output:

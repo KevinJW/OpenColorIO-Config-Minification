@@ -102,20 +102,30 @@ ocio-minify configs/studio-config-all-views-v4.0.0_aces-v2.0_ocio-v2.5.ocio --be
 
 # JSON output (for automated CI/CD metric tracking)
 ocio-minify configs/studio-config-all-views-v4.0.0_aces-v2.0_ocio-v2.5.ocio --benchmark --format json
+
+# Re-serialize original and minified configs via PyOpenColorIO and display unified diff
+ocio-minify configs/studio-config-all-views-v4.0.0_aces-v2.0_ocio-v2.5.ocio --preset aggressive --diff
 ```
 
 ### Python API
 
 ```python
-from ocio_minifier import MinificationPipeline, FidelityVerifier
+from ocio_minifier import (
+    MinificationPipeline,
+    FidelityVerifier,
+    diff_serialized_configs,
+)
 
 # Run lossless syntactic minification
 pipeline = MinificationPipeline.preset_syntactic()
 minified_text = pipeline.run(raw_ocio_yaml)
 
 # Run aggressive lossy minification
-aggressive_pipeline = MinificationPipeline.preset_aggressive()
+aggressive_pipeline = MinificationPipeline.preset_aggressive(precision=7)
 compact_text = aggressive_pipeline.run(raw_ocio_yaml)
+
+# Validate exact canonical serialization diff
+diff_output = diff_serialized_configs(orig_cfg, cand_cfg)
 ```
 
 ## Project Structure
