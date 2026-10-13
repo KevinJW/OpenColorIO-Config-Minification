@@ -64,9 +64,50 @@ def test_matrix_multiline_whitespace_normalized(ocio_module):
     )
 
 
+def test_inlining_roles_dictionary(ocio_module):
+    """Multiline roles dictionary should be compacted into single flow mapping line."""
+    yaml_src = (
+        "roles:\n"
+        "  aces_interchange: ACES2065-1\n"
+        "  scene_linear: ACEScg\n"
+        "  color_picking: sRGB\n"
+    )
+    result = ocio_module.transform_flow_transforms(yaml_src)
+    assert (
+        result
+        == "roles: {aces_interchange: ACES2065-1, scene_linear: ACEScg, color_picking: sRGB}\n"
+    )
+
+
+def test_inlining_group_children_sequence(ocio_module):
+    """Children list containing flow transforms or alias references should be compacted to a flow sequence."""
+    yaml_src = "    children:\n      - *logcam_ref_0\n      - *matrix_ref_3\n"
+    result = ocio_module.transform_flow_transforms(yaml_src)
+    assert result == "    children: [*logcam_ref_0, *matrix_ref_3]\n"
+
+
+def test_inlining_file_and_colorspace_transforms(ocio_module):
+    """Multiline FileTransform and ColorSpaceTransform should be compacted to flow mappings."""
+    yaml_src = (
+        "    - !<FileTransform>\n"
+        "      src: vendor.cube\n"
+        "      interpolation: tetrahedral\n"
+        "    - !<ColorSpaceTransform>\n"
+        "      src: ACES2065-1\n"
+        "      dst: ACEScg\n"
+    )
+    result = ocio_module.transform_flow_transforms(yaml_src)
+    assert (
+        "- !<FileTransform> {src: vendor.cube, interpolation: tetrahedral}\n" in result
+    )
+    assert "- !<ColorSpaceTransform> {src: ACES2065-1, dst: ACEScg}\n" in result
+
+
 def test_flow_transforms_idempotency(ocio_module):
     """Applying transform_flow_transforms repeatedly should yield identical content."""
     yaml_src = (
+        "roles:\n"
+        "  default: Raw\n"
         "    to_scene_reference: !<BuiltinTransform>\n"
         "      style: ACEScc_to_ACES2065-1\n"
         "      - !<MatrixTransform>\n"
