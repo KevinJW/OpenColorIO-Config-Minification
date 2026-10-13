@@ -32,11 +32,11 @@ def test_pipeline_composition(minimal_ocio_yaml):
 def test_pipeline_presets():
     """Verify built-in pipeline presets conform to lossless and aggressive contracts."""
     syn = MinificationPipeline.preset_syntactic()
-    assert len(syn) == 4
+    assert len(syn) == 5
     assert syn.is_lossy is False
 
     agg = MinificationPipeline.preset_aggressive()
-    assert len(agg) == 5
+    assert len(agg) == 6
     assert agg.is_lossy is True
 
 
@@ -62,7 +62,7 @@ def test_benchmark_runner_and_table_formatter(minimal_ocio_yaml):
     runner = BenchmarkRunner()
     results = runner.run_suite(minimal_ocio_yaml)
 
-    assert len(results) == 8
+    assert len(results) == 10
     assert results[0].name.startswith("Baseline")
     assert all(r.fidelity_passed for r in results)
 

@@ -7,6 +7,8 @@ from typing_extensions import Self
 from ocio_minifier.transforms import (
     CompactAmfScalarsTransform,
     ElideDefaultsTransform,
+    FloatPrecisionTransform,
+    FlowCdlTransformsTransform,
     FlowTransformsTransform,
     StripDescriptionsTransform,
     Transform,
@@ -64,21 +66,19 @@ class MinificationPipeline:
                 ElideDefaultsTransform(),
                 CompactAmfScalarsTransform(),
                 FlowTransformsTransform(),
+                FlowCdlTransformsTransform(),
                 YamlAnchorsTransform(),
             ],
             name="Syntactic Lossless",
         )
 
     @classmethod
-    def preset_aggressive(cls) -> "MinificationPipeline":
-        """Maximum compression: lossless syntactic transforms plus lossy description stripping."""
-        return cls(
-            transforms=[
-                ElideDefaultsTransform(),
-                CompactAmfScalarsTransform(),
-                FlowTransformsTransform(),
-                YamlAnchorsTransform(),
-                StripDescriptionsTransform(),
-            ],
-            name="Aggressive (Lossy Descriptions)",
-        )
+    def preset_aggressive(cls, precision: int | None = None) -> "MinificationPipeline":
+        """Maximum compression: lossless syntactic transforms plus lossy description stripping and optional float rounding."""
+        pipeline = cls.preset_syntactic()
+        pipeline.name = "Aggressive (Lossy Descriptions)"
+        pipeline.add(StripDescriptionsTransform())
+        if precision is not None:
+            pipeline.add(FloatPrecisionTransform(decimals=precision))
+            pipeline.name += f" [Precision: {precision}]"
+        return pipeline

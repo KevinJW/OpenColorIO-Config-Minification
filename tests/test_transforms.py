@@ -3,12 +3,16 @@ import pytest
 from ocio_minifier.transforms import (
     CompactAmfScalarsTransform,
     ElideDefaultsTransform,
+    FloatPrecisionTransform,
+    FlowCdlTransformsTransform,
     FlowTransformsTransform,
     StripDescriptionsTransform,
     Transform,
     YamlAnchorsTransform,
     transform_compact_amf_scalars,
     transform_elide_defaults,
+    transform_float_precision,
+    transform_flow_cdl_transforms,
     transform_flow_transforms,
     transform_strip_descriptions,
     transform_yaml_anchors,
@@ -20,6 +24,8 @@ ALL_TRANSFORM_CLASSES = [
     (FlowTransformsTransform, transform_flow_transforms, False),
     (YamlAnchorsTransform, transform_yaml_anchors, False),
     (StripDescriptionsTransform, transform_strip_descriptions, True),
+    (FloatPrecisionTransform, transform_float_precision, True),
+    (FlowCdlTransformsTransform, transform_flow_cdl_transforms, False),
 ]
 
 

@@ -65,6 +65,12 @@ def create_parser() -> argparse.ArgumentParser:
         help="Numerical tolerance for DAG fidelity verification (default: 1e-6)",
     )
     parser.add_argument(
+        "--precision",
+        type=int,
+        default=None,
+        help="Decimals of precision for lossy float rounding (only applies to 'aggressive' preset). Default: None (disabled)",
+    )
+    parser.add_argument(
         "--version",
         action="version",
         version=f"%(prog)s {__version__}",
@@ -109,7 +115,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     # Mode 2: Minification Pipeline
     if args.preset == "aggressive":
-        pipeline = MinificationPipeline.preset_aggressive()
+        pipeline = MinificationPipeline.preset_aggressive(precision=args.precision)
     else:
         pipeline = MinificationPipeline.preset_syntactic()
 

@@ -128,7 +128,15 @@ class BenchmarkRunner:
             )
         )
 
-        # 4. YAML Anchors & Aliases
+        # 4. CDL Transform Flow Inlining
+        from ocio_minifier.transforms import FlowCdlTransformsTransform
+
+        t_cdl = FlowCdlTransformsTransform().apply(source_text)
+        results.append(
+            self.benchmark_stage("CDL Flow Inlining", t_cdl, baseline_bytes, orig_cfg)
+        )
+
+        # 5. YAML Anchors & Aliases
         t_yaml = YamlAnchorsTransform().apply(source_text)
         results.append(
             self.benchmark_stage(
@@ -136,7 +144,7 @@ class BenchmarkRunner:
             )
         )
 
-        # 5. Strip Descriptions (Lossy)
+        # 6. Strip Descriptions (Lossy)
         t_desc = StripDescriptionsTransform().apply(source_text)
         results.append(
             self.benchmark_stage(
@@ -144,7 +152,17 @@ class BenchmarkRunner:
             )
         )
 
-        # 6. Combined (Syntactic Only)
+        # 7. Float Precision Rounding (Lossy)
+        from ocio_minifier.transforms import FloatPrecisionTransform
+
+        t_float = FloatPrecisionTransform(decimals=7).apply(source_text)
+        results.append(
+            self.benchmark_stage(
+                "Float Rounding [7 Decimals] (Lossy)", t_float, baseline_bytes, orig_cfg
+            )
+        )
+
+        # 8. Combined (Syntactic Only)
         t_syn = MinificationPipeline.preset_syntactic().run(source_text)
         results.append(
             self.benchmark_stage(
@@ -152,7 +170,7 @@ class BenchmarkRunner:
             )
         )
 
-        # 7. Combined (Max / Lossy Desc)
+        # 9. Combined (Max / Lossy Desc)
         t_max = MinificationPipeline.preset_aggressive().run(source_text)
         results.append(
             self.benchmark_stage(
