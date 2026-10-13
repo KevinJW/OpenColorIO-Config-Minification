@@ -1,5 +1,7 @@
 import pytest
 
+from ocio_minifier.benchmark import BenchmarkRunner
+
 
 @pytest.mark.skipif(
     not pytest.importorskip("PyOpenColorIO", reason="PyOpenColorIO required"), reason=""
@@ -38,3 +40,22 @@ def test_run_benchmark_reduction_and_fidelity(ocio_module, minimal_ocio_yaml):
     assert result["Fidelity"] == "PASS"
     assert float(result["Raw (KB)"]) <= float(result["Raw (KB)"])
     assert result["Max ΔRGB"] == "0.00e+00"
+
+
+@pytest.mark.skipif(
+    not pytest.importorskip("PyOpenColorIO", reason="PyOpenColorIO required"), reason=""
+)
+def test_benchmark_runner_robust_timing(minimal_ocio_yaml):
+    """BenchmarkRunner should execute multiple iterations and record min and stddev statistics."""
+    runner = BenchmarkRunner(
+        warmup_iterations=2,
+        timing_iterations=3,
+        statistic="median",
+    )
+    baseline_bytes = len(minimal_ocio_yaml.encode("utf-8"))
+    res = runner.benchmark_stage("Robust Test", minimal_ocio_yaml, baseline_bytes)
+
+    assert res.parse_time_ms > 0
+    assert res.parse_time_min_ms is not None and res.parse_time_min_ms > 0
+    assert res.parse_time_stddev_ms is not None and res.parse_time_stddev_ms >= 0
+    assert res.parse_time_min_ms <= res.parse_time_ms

@@ -53,6 +53,8 @@ class BenchmarkResult:
     parse_time_ms: float
     max_delta: float
     fidelity_passed: bool
+    parse_time_min_ms: float | None = None
+    parse_time_stddev_ms: float | None = None
 
     @property
     def raw_kb(self) -> float:
@@ -71,12 +73,17 @@ class BenchmarkResult:
 
     def to_dict(self) -> dict[str, str]:
         """Convert metrics to formatted string dictionary matching benchmark table columns."""
+        if self.parse_time_stddev_ms is not None and self.parse_time_stddev_ms > 0:
+            parse_str = f"{self.parse_time_ms:.2f} ± {self.parse_time_stddev_ms:.2f}"
+        else:
+            parse_str = f"{self.parse_time_ms:.2f}"
+
         return {
             "Name": self.name,
             "Raw (KB)": f"{self.raw_kb:.2f}",
             "Reduction": f"{self.reduction_pct:.1f}%",
             "Gzip (KB)": f"{self.gzip_kb:.2f}",
-            "Parse (ms)": f"{self.parse_time_ms:.2f}",
+            "Parse (ms)": parse_str,
             "Max ΔRGB": f"{self.max_delta:.2e}",
             "Fidelity": "PASS" if self.fidelity_passed else "FAIL",
         }

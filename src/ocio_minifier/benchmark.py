@@ -1,7 +1,9 @@
 """Benchmark suite execution and metric calculation for OCIO minification."""
 
+import gc
 import gzip
 import os
+import statistics
 import subprocess  # nosec B404
 import tempfile
 import time
@@ -22,8 +24,17 @@ from ocio_minifier.verification import HAS_OCIO, FidelityVerifier, ocio
 class BenchmarkRunner:
     """Executes transformation benchmarks and measures compression, parse speed, and fidelity."""
 
-    def __init__(self, verifier: FidelityVerifier | None = None):
+    def __init__(
+        self,
+        verifier: FidelityVerifier | None = None,
+        warmup_iterations: int = 1,
+        timing_iterations: int = 5,
+        statistic: str = "median",
+    ):
         self.verifier = verifier or FidelityVerifier()
+        self.warmup_iterations = max(0, warmup_iterations)
+        self.timing_iterations = max(1, timing_iterations)
+        self.statistic = statistic
 
     def benchmark_stage(
         self,
@@ -38,22 +49,55 @@ class BenchmarkRunner:
         gzip_size = len(gzip.compress(encoded, compresslevel=9))
 
         parse_time_ms = 0.0
+        parse_time_min_ms: float | None = None
+        parse_time_stddev_ms: float | None = None
         max_delta = 0.0
         fidelity_pass = False
 
         if HAS_OCIO:
-            start = time.perf_counter()
             try:
-                min_cfg = ocio.Config.CreateFromStream(content)
-                min_cfg.validate()
-                parse_time_ms = (time.perf_counter() - start) * 1000.0
+                # 1. Warmup iterations (to warm CPU caches, memory allocators, and internal registries)
+                for _ in range(self.warmup_iterations):
+                    warm_cfg = ocio.Config.CreateFromStream(content)
+                    warm_cfg.validate()
 
-                if orig_cfg is not None:
+                # 2. Repeated measurement iterations with GC isolation
+                timings: list[float] = []
+                last_cfg = None
+                for _ in range(self.timing_iterations):
+                    gc.collect()
+                    gc_was_enabled = gc.isenabled()
+                    gc.disable()
+                    try:
+                        start = time.perf_counter()
+                        last_cfg = ocio.Config.CreateFromStream(content)
+                        last_cfg.validate()
+                        end = time.perf_counter()
+                        timings.append((end - start) * 1000.0)
+                    finally:
+                        if gc_was_enabled:
+                            gc.enable()
+
+                if self.statistic == "min":
+                    parse_time_ms = min(timings)
+                elif self.statistic == "mean":
+                    parse_time_ms = statistics.mean(timings)
+                else:  # default "median"
+                    parse_time_ms = statistics.median(timings)
+
+                parse_time_min_ms = min(timings)
+                parse_time_stddev_ms = (
+                    statistics.stdev(timings) if len(timings) > 1 else 0.0
+                )
+
+                min_cfg = last_cfg
+
+                if orig_cfg is not None and min_cfg is not None:
                     res = self.verifier.verify(orig_cfg, min_cfg)
                     max_delta = res.max_delta
                     fidelity_pass = res.passed
                 else:
-                    fidelity_pass = True
+                    fidelity_pass = min_cfg is not None
             except Exception:
                 fidelity_pass = False
         else:
@@ -62,15 +106,35 @@ class BenchmarkRunner:
                 f.write(content)
                 tmp_name = f.name
             try:
-                start = time.perf_counter()
-                res_proc = subprocess.run(
-                    ["ociocheck", "--file", tmp_name],
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                )  # nosec B603, B607
-                parse_time_ms = (time.perf_counter() - start) * 1000.0
-                fidelity_pass = res_proc.returncode == 0
+                # Warmup
+                for _ in range(self.warmup_iterations):
+                    subprocess.run(
+                        ["ociocheck", "--file", tmp_name],
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )  # nosec B603, B607
+
+                timings_cli: list[float] = []
+                last_returncode = 1
+                for _ in range(self.timing_iterations):
+                    start = time.perf_counter()
+                    res_proc = subprocess.run(
+                        ["ociocheck", "--file", tmp_name],
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )  # nosec B603, B607
+                    end = time.perf_counter()
+                    timings_cli.append((end - start) * 1000.0)
+                    last_returncode = res_proc.returncode
+
+                parse_time_ms = statistics.median(timings_cli)
+                parse_time_min_ms = min(timings_cli)
+                parse_time_stddev_ms = (
+                    statistics.stdev(timings_cli) if len(timings_cli) > 1 else 0.0
+                )
+                fidelity_pass = last_returncode == 0
             finally:
                 if os.path.exists(tmp_name):
                     os.remove(tmp_name)
@@ -83,6 +147,8 @@ class BenchmarkRunner:
             parse_time_ms=parse_time_ms,
             max_delta=max_delta,
             fidelity_passed=fidelity_pass,
+            parse_time_min_ms=parse_time_min_ms,
+            parse_time_stddev_ms=parse_time_stddev_ms,
         )
 
     def run_suite(self, source_text: str) -> list[BenchmarkResult]:

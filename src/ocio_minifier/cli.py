@@ -70,6 +70,19 @@ def create_parser() -> argparse.ArgumentParser:
         help="Numerical tolerance for DAG fidelity verification (default: 1e-6)",
     )
     parser.add_argument(
+        "-n",
+        "--iterations",
+        type=int,
+        default=5,
+        help="Number of timing iterations to run for benchmark parse measurement (default: 5)",
+    )
+    parser.add_argument(
+        "--warmup",
+        type=int,
+        default=1,
+        help="Number of warmup parse iterations prior to benchmark timing (default: 1)",
+    )
+    parser.add_argument(
         "--precision",
         type=int,
         default=None,
@@ -113,7 +126,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     # Mode 1: Benchmark Suite
     if args.benchmark:
         try:
-            runner = BenchmarkRunner(FidelityVerifier(tolerance=args.tolerance))
+            runner = BenchmarkRunner(
+                verifier=FidelityVerifier(tolerance=args.tolerance),
+                warmup_iterations=args.warmup,
+                timing_iterations=args.iterations,
+            )
             results = runner.run_suite(source_content)
         except Exception as e:
             sys.stderr.write(f"Benchmark error: {e}\n")

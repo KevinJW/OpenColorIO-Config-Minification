@@ -110,3 +110,15 @@ def test_cli_benchmark_json(capsys):
     assert len(data) > 0
     assert "Name" in data[0]
     assert "Raw (KB)" in data[0]
+
+
+def test_cli_benchmark_with_iterations(capsys):
+    """Running benchmark mode with custom iterations and warmup flags."""
+    source_file = Path("configs/cg-config-v1.0.0_aces-v1.3_ocio-v2.1.ocio")
+    if not source_file.exists():
+        pytest.skip(f"Config {source_file} not found")
+
+    ret = main([str(source_file), "--benchmark", "--iterations", "2", "--warmup", "1"])
+    assert ret == 0
+    captured = capsys.readouterr()
+    assert "| Transform | Raw Size |" in captured.out
