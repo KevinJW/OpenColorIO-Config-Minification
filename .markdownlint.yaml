@@ -1,0 +1,12 @@
+# Markdownlint configuration
+default: true
+
+# MD013/line-length: Line length is handled by editor wrapping
+MD013: false
+
+# MD024/no-duplicate-heading: Multiple headings with the same content
+MD024:
+  siblings_only: true
+
+# MD033/no-inline-html: Allow inline HTML if needed
+MD033: false
