@@ -67,8 +67,54 @@ All development tools are configured directly in `pyproject.toml`:
   pytest
   ```
 
+## Usage
+
+### Command-Line Interface (`ocio-minify`)
+
+Minify an OCIO configuration with lossless syntactic compression and mathematical verification:
+
+```powershell
+ocio-minify configs/cg-config-v5.0.0_aces-v2.1_ocio-v2.6.ocio -o minified.ocio --verify
+```
+
+Use aggressive compression (lossless syntactic transforms + description stripping):
+
+```powershell
+ocio-minify configs/studio-config-v5.0.0_aces-v2.1_ocio-v2.6.ocio -o studio-min.ocio --preset aggressive --verify
+```
+
+Run the benchmark suite comparing all transforms with DAG fidelity checks:
+
+```powershell
+# Markdown table (default)
+ocio-minify configs/studio-config-all-views-v4.0.0_aces-v2.0_ocio-v2.5.ocio --benchmark
+
+# JSON output (for automated CI/CD metric tracking)
+ocio-minify configs/studio-config-all-views-v4.0.0_aces-v2.0_ocio-v2.5.ocio --benchmark --format json
+```
+
+### Python API
+
+```python
+from ocio_minifier import MinificationPipeline, FidelityVerifier
+
+# Run lossless syntactic minification
+pipeline = MinificationPipeline.preset_syntactic()
+minified_text = pipeline.run(raw_ocio_yaml)
+
+# Run aggressive lossy minification
+aggressive_pipeline = MinificationPipeline.preset_aggressive()
+compact_text = aggressive_pipeline.run(raw_ocio_yaml)
+```
+
 ## Project Structure
 
+- `src/ocio_minifier/`: Modular package source:
+  - `transforms/`: Individual transform implementations conforming to `Transform` protocol.
+  - `pipeline.py`: Composable `MinificationPipeline` and preset definitions.
+  - `verification.py`: `FidelityVerifier` testing forward, inverse, and display/view mathematical parity.
+  - `benchmark.py`: `BenchmarkRunner` measuring size reductions, parse time, and fidelity.
+  - `cli.py`: Production `argparse` CLI implementation.
 - `configs/`: Directory containing OpenColorIO configuration files, including official builtin configurations from ASWF OpenColorIO:
   - **CG Configs**:
     - `cg-config-v1.0.0_aces-v1.3_ocio-v2.1.ocio`
@@ -83,12 +129,12 @@ All development tools are configured directly in `pyproject.toml`:
     - `studio-config-v4.0.0_aces-v2.0_ocio-v2.5.ocio`
     - `studio-config-v5.0.0_aces-v2.1_ocio-v2.6.ocio`
     - `studio-config-all-views-v4.0.0_aces-v2.0_ocio-v2.5.ocio`
-- `tests/`: Comprehensive test suite verifying individual transforms, YAML anchors, line-based description stripping, and DAG numerical fidelity.
+- `tests/`: Comprehensive test suite verifying individual transforms, YAML anchors, line-based description stripping, models, and DAG numerical fidelity.
 
 ## Benchmarks
 
 Run the benchmark suite against an OCIO configuration (defaults to `configs/studio-config-all-views-v4.0.0_aces-v2.0_ocio-v2.5.ocio` if no path is passed):
 
 ```powershell
-python gemini-code-1791882948890.py configs/studio-config-all-views-v4.0.0_aces-v2.0_ocio-v2.5.ocio
+ocio-minify --benchmark
 ```

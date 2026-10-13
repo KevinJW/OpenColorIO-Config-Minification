@@ -26,6 +26,9 @@ dependencies = [
     "opencolorio>=2.2.0",
 ]
 
+[project.scripts]
+ocio-minify = "ocio_minifier.cli:main"
+
 [project.optional-dependencies]
 dev = [
     "bandit[toml]>=1.7.0",
