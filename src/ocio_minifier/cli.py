@@ -71,6 +71,12 @@ def create_parser() -> argparse.ArgumentParser:
         help="Decimals of precision for lossy float rounding (only applies to 'aggressive' preset). Default: None (disabled)",
     )
     parser.add_argument(
+        "--preserve-invariants",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Preserve row sums (unity gain) and channel symmetry during float rounding (default: True)",
+    )
+    parser.add_argument(
         "--version",
         action="version",
         version=f"%(prog)s {__version__}",
@@ -115,7 +121,10 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     # Mode 2: Minification Pipeline
     if args.preset == "aggressive":
-        pipeline = MinificationPipeline.preset_aggressive(precision=args.precision)
+        pipeline = MinificationPipeline.preset_aggressive(
+            precision=args.precision,
+            preserve_invariants=args.preserve_invariants,
+        )
     else:
         pipeline = MinificationPipeline.preset_syntactic()
 

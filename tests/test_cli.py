@@ -57,6 +57,32 @@ def test_cli_minify_with_verify(tmp_path: Path):
     assert out_file.exists()
 
 
+def test_cli_minify_aggressive_with_precision(tmp_path: Path):
+    """Minifying with aggressive preset, precision rounding, and invariant preservation."""
+    source_file = Path("configs/cg-config-v1.0.0_aces-v1.3_ocio-v2.1.ocio")
+    if not source_file.exists():
+        pytest.skip(f"Config {source_file} not found")
+
+    out_file = tmp_path / "minified_precision.ocio"
+    ret = main(
+        [
+            str(source_file),
+            "-o",
+            str(out_file),
+            "--preset",
+            "aggressive",
+            "--precision",
+            "7",
+            "--preserve-invariants",
+            "--verify",
+            "--tolerance",
+            "0.05",
+        ]
+    )
+    assert ret == 0
+    assert out_file.exists()
+
+
 def test_cli_benchmark_markdown(capsys):
     """Running benchmark mode with default markdown should print table."""
     source_file = Path("configs/cg-config-v1.0.0_aces-v1.3_ocio-v2.1.ocio")

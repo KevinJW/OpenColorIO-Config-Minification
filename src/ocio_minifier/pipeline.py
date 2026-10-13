@@ -73,12 +73,22 @@ class MinificationPipeline:
         )
 
     @classmethod
-    def preset_aggressive(cls, precision: int | None = None) -> "MinificationPipeline":
+    def preset_aggressive(
+        cls,
+        precision: int | None = None,
+        preserve_invariants: bool = True,
+    ) -> "MinificationPipeline":
         """Maximum compression: lossless syntactic transforms plus lossy description stripping and optional float rounding."""
         pipeline = cls.preset_syntactic()
         pipeline.name = "Aggressive (Lossy Descriptions)"
         pipeline.add(StripDescriptionsTransform())
         if precision is not None:
-            pipeline.add(FloatPrecisionTransform(decimals=precision))
+            pipeline.add(
+                FloatPrecisionTransform(
+                    decimals=precision,
+                    preserve_matrix_row_sums=preserve_invariants,
+                    preserve_channel_symmetry=preserve_invariants,
+                )
+            )
             pipeline.name += f" [Precision: {precision}]"
         return pipeline
