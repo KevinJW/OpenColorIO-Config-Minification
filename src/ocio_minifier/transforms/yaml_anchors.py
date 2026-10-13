@@ -1,37 +1,62 @@
-"""YAML anchor and alias transformation for repeated matrix deduplication."""
+"""YAML anchor and alias transformation for repeated transform and view deduplication."""
 
 import re
 
+SUPPORTED_TAGS: dict[str, str] = {
+    "MatrixTransform": "matrix_ref",
+    "BuiltinTransform": "builtin_ref",
+    "LogCameraTransform": "logcam_ref",
+    "ExponentTransform": "exponent_ref",
+    "ExponentWithLinearTransform": "explin_ref",
+    "CDLTransform": "cdl_ref",
+    "RangeTransform": "range_ref",
+    "View": "view_ref",
+}
+
 
 class YamlAnchorsTransform:
-    """Deduplicates repeated identical MatrixTransforms using standard YAML &anchors and *aliases."""
+    """Deduplicates repeated identical transforms and view mappings using standard YAML &anchors and *aliases."""
 
     name: str = "YAML Anchors & Aliases"
-    description: str = "Deduplicates repeated identical MatrixTransforms using standard YAML &anchors and *aliases"
+    description: str = (
+        "Deduplicates repeated identical transforms (Matrix, Builtin, LogCamera, Exponent, CDL, Range) "
+        "and Views using standard YAML &anchors and *aliases"
+    )
     is_lossy: bool = False
 
+    def __init__(self, supported_tags: dict[str, str] | None = None):
+        self.supported_tags = supported_tags or dict(SUPPORTED_TAGS)
+
     def apply(self, content: str) -> str:
-        mat_pattern: re.Pattern[str] = re.compile(
-            r"(!<MatrixTransform>\s*\{matrix:\s*\[([0-9., \-eE]+)\]\})"
+        pattern: re.Pattern[str] = re.compile(
+            r"(?<![&*a-zA-Z0-9_\-])(!<([A-Za-z0-9]+)>\s*\{[^\r\n{}]+\})"
         )
-        occurrences = mat_pattern.findall(content)
+        occurrences = pattern.findall(content)
 
-        val_counts: dict[str, int] = {}
-        for _full_node, mat_str in occurrences:
-            norm_key = ",".join(x.strip() for x in mat_str.split(","))
-            val_counts[norm_key] = val_counts.get(norm_key, 0) + 1
+        # Count normalized representations for each supported tag
+        norm_counts: dict[tuple[str, str], int] = {}
+        for full_node, tag_name in occurrences:
+            if tag_name not in self.supported_tags:
+                continue
+            norm_key = (tag_name, re.sub(r"\s+", " ", full_node).strip())
+            norm_counts[norm_key] = norm_counts.get(norm_key, 0) + 1
 
-        anchors = {
-            key: f"matrix_ref_{i}"
-            for i, (key, count) in enumerate(val_counts.items())
-            if count > 1
-        }
-        seen: set[str] = set()
+        # Generate unique anchor identifiers per tag namespace
+        tag_indices: dict[str, int] = {}
+        anchors: dict[tuple[str, str], str] = {}
+        for (tag_name, norm_node), count in norm_counts.items():
+            if count > 1:
+                idx = tag_indices.get(tag_name, 0)
+                tag_indices[tag_name] = idx + 1
+                prefix = self.supported_tags[tag_name]
+                anchors[(tag_name, norm_node)] = f"{prefix}_{idx}"
+
+        seen: set[tuple[str, str]] = set()
 
         def _replace_anchor(match: re.Match[str]) -> str:
             full_node = match.group(1)
-            mat_str = match.group(2)
-            norm_key = ",".join(x.strip() for x in mat_str.split(","))
+            tag_name = match.group(2)
+            norm_key = (tag_name, re.sub(r"\s+", " ", full_node).strip())
             if norm_key in anchors:
                 anchor_name = anchors[norm_key]
                 if norm_key not in seen:
@@ -40,7 +65,7 @@ class YamlAnchorsTransform:
                 return f"*{anchor_name}"
             return full_node
 
-        result: str = mat_pattern.sub(_replace_anchor, content)
+        result: str = pattern.sub(_replace_anchor, content)
         return result
 
 
