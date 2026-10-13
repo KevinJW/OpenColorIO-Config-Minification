@@ -42,6 +42,9 @@ dev = [
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+"ocio_minifier" = ["py.typed"]
+
 [tool.ruff]
 line-length = 88
 target-version = "py310"
@@ -95,4 +98,4 @@ skips = ["B101", "B404"]  # allow assert statements and subprocess import
 minversion = "7.0"
 testpaths = ["tests"]
 python_files = ["test_*.py"]
-addopts = "-ra --strict-markers"
+addopts = "-ra --strict-markers --cov=ocio_minifier --cov-fail-under=85"
