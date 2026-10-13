@@ -36,8 +36,8 @@ dev = [
     "ruff>=0.1.0",
 ]
 
-[tool.setuptools]
-py-modules = []
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [tool.ruff]
 line-length = 88
