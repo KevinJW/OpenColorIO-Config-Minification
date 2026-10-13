@@ -1,0 +1,2 @@
+# Convenience reference to editable installation with development dependencies
+-e .[dev]
