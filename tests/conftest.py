@@ -1,7 +1,8 @@
-import importlib
 from pathlib import Path
 
 import pytest
+
+import ocio_minifier
 
 # Ensure repository root is on sys.path
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -13,8 +14,8 @@ SAMPLE_CONFIG_PATH = (
 
 @pytest.fixture(scope="session")
 def ocio_module():
-    """Import and return the core minification module."""
-    return importlib.import_module("ocio_minifier")
+    """Return the core minification package module."""
+    return ocio_minifier
 
 
 @pytest.fixture(scope="session")
