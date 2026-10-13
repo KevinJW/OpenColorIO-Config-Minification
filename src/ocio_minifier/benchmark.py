@@ -86,6 +86,8 @@ class BenchmarkRunner:
                     parse_time_ms = statistics.median(timings)
 
                 parse_time_min_ms = min(timings)
+                parse_time_max_ms = max(timings)
+                parse_time_mean_ms = statistics.mean(timings)
                 parse_time_stddev_ms = (
                     statistics.stdev(timings) if len(timings) > 1 else 0.0
                 )
@@ -131,6 +133,8 @@ class BenchmarkRunner:
 
                 parse_time_ms = statistics.median(timings_cli)
                 parse_time_min_ms = min(timings_cli)
+                parse_time_max_ms = max(timings_cli)
+                parse_time_mean_ms = statistics.mean(timings_cli)
                 parse_time_stddev_ms = (
                     statistics.stdev(timings_cli) if len(timings_cli) > 1 else 0.0
                 )
@@ -148,6 +152,8 @@ class BenchmarkRunner:
             max_delta=max_delta,
             fidelity_passed=fidelity_pass,
             parse_time_min_ms=parse_time_min_ms,
+            parse_time_max_ms=parse_time_max_ms,
+            parse_time_mean_ms=parse_time_mean_ms,
             parse_time_stddev_ms=parse_time_stddev_ms,
         )
 
@@ -254,7 +260,7 @@ def format_markdown_table(results: list[BenchmarkResult]) -> str:
         "Raw Size",
         "Raw Delta",
         "Gzip Size",
-        "Parse Time",
+        "Parse Time (Mean ± Std)",
         "Max ΔRGB",
         "DAG Fidelity",
     ]
@@ -267,8 +273,8 @@ def format_markdown_table(results: list[BenchmarkResult]) -> str:
 
     for r in results:
         lines.append(
-            f"| {r.name} | {r.raw_kb:.2f} KB | {r.reduction_pct:.1f}% | "
-            f"{r.gzip_kb:.2f} KB | {r.parse_time_ms:.2f} ms | "
+            f"| {r.name} | {r.raw_size_str} | {r.delta_str} | "
+            f"{r.gzip_size_str} | {r.timing_str} | "
             f"{r.max_delta:.2e} | {'PASS' if r.fidelity_passed else 'FAIL'} |"
         )
 

@@ -16,7 +16,10 @@ def test_run_benchmark_baseline_entry(ocio_module, minimal_ocio_yaml):
     assert result["Name"] == "Baseline"
     assert result["Reduction"] == "0.0%"
     assert result["Fidelity"] == "PASS"
+    assert "Raw Bytes" in result
     assert "Raw (KB)" in result
+    assert "Delta Bytes" in result
+    assert "Gzip Bytes" in result
     assert "Gzip (KB)" in result
     assert "Parse (ms)" in result
     assert "Max ΔRGB" in result

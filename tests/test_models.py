@@ -82,13 +82,21 @@ def test_benchmark_result_metrics():
         parse_time_ms=50.25,
         max_delta=0.0,
         fidelity_passed=True,
+        parse_time_mean_ms=51.10,
+        parse_time_stddev_ms=1.20,
     )
     assert bench.raw_kb == 80000 / 1024.0
     assert bench.gzip_kb == 10000 / 1024.0
+    assert bench.delta_bytes == -20000
+    assert "80,000 B" in bench.raw_size_str
+    assert "-20,000 B" in bench.delta_str
+    assert "51.10 ± 1.20 ms" in bench.timing_str
     assert pytest.approx(bench.reduction_pct, 0.1) == 20.0
 
     d = bench.to_dict()
     assert d["Name"] == "Elide Defaults"
+    assert d["Raw Bytes"] == "80,000 B"
+    assert d["Delta Bytes"] == "-20,000 B"
     assert d["Reduction"] == "20.0%"
     assert d["Fidelity"] == "PASS"
-    assert d["Parse (ms)"] == "50.25"
+    assert d["Parse (ms)"] == "51.10 ± 1.20 ms"
