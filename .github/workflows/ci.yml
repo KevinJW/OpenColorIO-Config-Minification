@@ -53,6 +53,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Run markdownlint
-        uses: igorshubovych/markdownlint-cli@88f5e62afbc373fb23bdf78010adab5e8b37ee98 # v0.40.0
+        uses: igorshubovych/markdownlint-cli@5b5dddc4fb0f83c3ea1fc5616fa63e115dce83e0 # v0.49.1
         with:
           config: .markdownlint.yaml
