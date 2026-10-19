@@ -102,3 +102,36 @@ def test_dag_fidelity_displays_and_views(
     assert passed is True
     assert max_delta == 0.0
     assert len(fails) == 0
+
+
+@pytest.mark.skipif(
+    not pytest.importorskip("PyOpenColorIO", reason="PyOpenColorIO required"), reason=""
+)
+def test_fidelity_verifier_orig_cache(
+    ocio_module, sample_ocio_config, sample_config_text
+):
+    """FidelityVerifier should cache baseline transform outputs and support clear_cache()."""
+    from ocio_minifier.verification import FidelityVerifier
+
+    verifier = FidelityVerifier()
+    candidate = ocio_module.ocio.Config.CreateFromStream(sample_config_text)
+
+    assert len(verifier._orig_cache) == 0
+
+    res1 = verifier.verify(sample_ocio_config, candidate)
+    assert res1.passed is True
+    assert id(sample_ocio_config) in verifier._orig_cache
+
+    cached_entry = verifier._orig_cache[id(sample_ocio_config)]
+    assert "ref_name" in cached_entry
+    assert "fwd_outs" in cached_entry
+    assert len(cached_entry["fwd_outs"]) > 0
+
+    # Second run reuses cache
+    res2 = verifier.verify(sample_ocio_config, candidate)
+    assert res2.passed is True
+    assert res2.max_delta == res1.max_delta
+
+    # Clearing cache removes entries
+    verifier.clear_cache()
+    assert len(verifier._orig_cache) == 0

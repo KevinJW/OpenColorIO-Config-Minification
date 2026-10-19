@@ -37,6 +37,11 @@ class FidelityVerifier:
         self.tolerance = tolerance
         self.check_inverse = check_inverse
         self.include_serialized_diff = include_serialized_diff
+        self._orig_cache: dict[int, dict[str, Any]] = {}
+
+    def clear_cache(self) -> None:
+        """Clear cached baseline processor outputs."""
+        self._orig_cache.clear()
 
     def diff_serialized(
         self,
@@ -47,6 +52,72 @@ class FidelityVerifier:
     ) -> str:
         """Serialize both configs using PyOpenColorIO and return a unified diff."""
         return diff_serialized_configs(orig_cfg, candidate_cfg, from_label, to_label)
+
+    def _get_or_create_orig_cache(self, orig_cfg: Any) -> dict[str, Any]:
+        """Precompute and cache baseline reference transform outputs."""
+        orig_id = id(orig_cfg)
+        if orig_id in self._orig_cache:
+            return self._orig_cache[orig_id]
+
+        ref_space = orig_cfg.getColorSpace(
+            ocio.ROLE_SCENE_LINEAR
+        ) or orig_cfg.getColorSpace("ACES2065-1")
+        all_orig_cs = list(
+            orig_cfg.getColorSpaces(
+                ocio.SEARCH_REFERENCE_SPACE_ALL, ocio.COLORSPACE_ALL
+            )
+        )
+        ref_name = (
+            ref_space.getName()
+            if ref_space
+            else (all_orig_cs[0].getName() if all_orig_cs else "Raw")
+        )
+
+        fwd_outs: dict[str, list[tuple[float, float, float]] | Exception] = {}
+        for cs in all_orig_cs:
+            cs_name = cs.getName()
+            try:
+                proc = orig_cfg.getProcessor(ref_name, cs_name).getDefaultCPUProcessor()
+                fwd_outs[cs_name] = [proc.applyRGB(rgb) for rgb in self.pixel_grid]
+            except Exception as e:
+                fwd_outs[cs_name] = e
+
+        inv_outs: dict[str, list[tuple[float, float, float]] | Exception] = {}
+        if self.check_inverse:
+            for cs in all_orig_cs:
+                cs_name = cs.getName()
+                try:
+                    proc = orig_cfg.getProcessor(
+                        cs_name, ref_name
+                    ).getDefaultCPUProcessor()
+                    inv_outs[cs_name] = [proc.applyRGB(rgb) for rgb in self.pixel_grid]
+                except Exception as e:
+                    inv_outs[cs_name] = e
+
+        view_outs: dict[
+            tuple[str, str], list[tuple[float, float, float]] | Exception
+        ] = {}
+        for display in orig_cfg.getDisplays():
+            for view in orig_cfg.getViews(display):
+                try:
+                    proc = orig_cfg.getProcessor(
+                        ref_name, display, view, ocio.TRANSFORM_DIR_FORWARD
+                    ).getDefaultCPUProcessor()
+                    view_outs[(display, view)] = [
+                        proc.applyRGB(rgb) for rgb in self.pixel_grid
+                    ]
+                except Exception as e:
+                    view_outs[(display, view)] = e
+
+        data = {
+            "ref_name": ref_name,
+            "all_cs_names": [cs.getName() for cs in all_orig_cs],
+            "fwd_outs": fwd_outs,
+            "inv_outs": inv_outs,
+            "view_outs": view_outs,
+        }
+        self._orig_cache[orig_id] = data
+        return data
 
     def verify(self, orig_cfg: Any, candidate_cfg: Any) -> VerificationResult:
         """Evaluate pixel parity between orig_cfg and candidate_cfg."""
@@ -65,41 +136,41 @@ class FidelityVerifier:
                 ],
             )
 
+        cached_data = self._get_or_create_orig_cache(orig_cfg)
+        ref_name = cached_data["ref_name"]
+        all_cs_names = cached_data["all_cs_names"]
+        fwd_outs = cached_data["fwd_outs"]
+        inv_outs = cached_data["inv_outs"]
+        view_outs = cached_data["view_outs"]
+
         max_delta = 0.0
         failures: list[ConversionFailure] = []
         evaluated_spaces = 0
         evaluated_views = 0
 
-        # Determine reference space (scene_linear role or ACES2065-1 fallback)
-        ref_space = orig_cfg.getColorSpace(
-            ocio.ROLE_SCENE_LINEAR
-        ) or orig_cfg.getColorSpace("ACES2065-1")
-        all_orig_cs = list(
-            orig_cfg.getColorSpaces(
-                ocio.SEARCH_REFERENCE_SPACE_ALL, ocio.COLORSPACE_ALL
-            )
-        )
-        ref_name = (
-            ref_space.getName()
-            if ref_space
-            else (all_orig_cs[0].getName() if all_orig_cs else "Raw")
-        )
-
         # 1. Evaluate forward (and optionally inverse) ColorSpace parity
-        for cs in all_orig_cs:
-            cs_name = cs.getName()
+        for cs_name in all_cs_names:
             evaluated_spaces += 1
-            # Forward transform: ref -> cs
+            orig_res = fwd_outs.get(cs_name)
+            if isinstance(orig_res, Exception):
+                failures.append(
+                    ConversionFailure(
+                        target_type="ColorSpace (Forward)",
+                        identifier=cs_name,
+                        input_rgb=(0.0, 0.0, 0.0),
+                        error_message=str(orig_res),
+                    )
+                )
+                continue
+            if orig_res is None:
+                continue
+
             try:
-                proc_orig = orig_cfg.getProcessor(
-                    ref_name, cs_name
-                ).getDefaultCPUProcessor()
                 proc_cand = candidate_cfg.getProcessor(
                     ref_name, cs_name
                 ).getDefaultCPUProcessor()
 
-                for rgb in self.pixel_grid:
-                    out_orig = proc_orig.applyRGB(rgb)
+                for rgb, out_orig in zip(self.pixel_grid, orig_res, strict=True):
                     out_cand = proc_cand.applyRGB(rgb)
 
                     for c_orig, c_cand in zip(out_orig, out_cand, strict=True):
@@ -131,16 +202,28 @@ class FidelityVerifier:
 
             # Inverse transform: cs -> ref
             if self.check_inverse:
+                orig_res_inv = inv_outs.get(cs_name)
+                if isinstance(orig_res_inv, Exception):
+                    failures.append(
+                        ConversionFailure(
+                            target_type="ColorSpace (Inverse)",
+                            identifier=cs_name,
+                            input_rgb=(0.0, 0.0, 0.0),
+                            error_message=str(orig_res_inv),
+                        )
+                    )
+                    continue
+                if orig_res_inv is None:
+                    continue
+
                 try:
-                    proc_orig_inv = orig_cfg.getProcessor(
-                        cs_name, ref_name
-                    ).getDefaultCPUProcessor()
                     proc_cand_inv = candidate_cfg.getProcessor(
                         cs_name, ref_name
                     ).getDefaultCPUProcessor()
 
-                    for rgb in self.pixel_grid:
-                        out_orig = proc_orig_inv.applyRGB(rgb)
+                    for rgb, out_orig in zip(
+                        self.pixel_grid, orig_res_inv, strict=True
+                    ):
                         out_cand = proc_cand_inv.applyRGB(rgb)
 
                         for c_orig, c_cand in zip(out_orig, out_cand, strict=True):
@@ -171,47 +254,53 @@ class FidelityVerifier:
                     )
 
         # 2. Evaluate Displays and Views parity
-        for display in orig_cfg.getDisplays():
-            for view in orig_cfg.getViews(display):
-                evaluated_views += 1
-                try:
-                    proc_orig = orig_cfg.getProcessor(
-                        ref_name, display, view, ocio.TRANSFORM_DIR_FORWARD
-                    ).getDefaultCPUProcessor()
-                    proc_cand = candidate_cfg.getProcessor(
-                        ref_name, display, view, ocio.TRANSFORM_DIR_FORWARD
-                    ).getDefaultCPUProcessor()
-
-                    for rgb in self.pixel_grid:
-                        out_orig = proc_orig.applyRGB(rgb)
-                        out_cand = proc_cand.applyRGB(rgb)
-
-                        for c_orig, c_cand in zip(out_orig, out_cand, strict=True):
-                            if c_orig == c_cand:
-                                continue
-                            if math.isnan(c_orig) and math.isnan(c_cand):
-                                continue
-                            diff = abs(c_orig - c_cand)
-                            if diff > max_delta:
-                                max_delta = diff
-                            if diff > self.tolerance or math.isnan(diff):
-                                failures.append(
-                                    ConversionFailure(
-                                        target_type="DisplayView",
-                                        identifier=f"{display}/{view}",
-                                        input_rgb=rgb,
-                                        delta=diff,
-                                    )
-                                )
-                except Exception as e:
-                    failures.append(
-                        ConversionFailure(
-                            target_type="DisplayView",
-                            identifier=f"{display}/{view}",
-                            input_rgb=(0.0, 0.0, 0.0),
-                            error_message=str(e),
-                        )
+        for (display, view), orig_res_view in view_outs.items():
+            evaluated_views += 1
+            if isinstance(orig_res_view, Exception):
+                failures.append(
+                    ConversionFailure(
+                        target_type="DisplayView",
+                        identifier=f"{display}/{view}",
+                        input_rgb=(0.0, 0.0, 0.0),
+                        error_message=str(orig_res_view),
                     )
+                )
+                continue
+
+            try:
+                proc_cand = candidate_cfg.getProcessor(
+                    ref_name, display, view, ocio.TRANSFORM_DIR_FORWARD
+                ).getDefaultCPUProcessor()
+
+                for rgb, out_orig in zip(self.pixel_grid, orig_res_view, strict=True):
+                    out_cand = proc_cand.applyRGB(rgb)
+
+                    for c_orig, c_cand in zip(out_orig, out_cand, strict=True):
+                        if c_orig == c_cand:
+                            continue
+                        if math.isnan(c_orig) and math.isnan(c_cand):
+                            continue
+                        diff = abs(c_orig - c_cand)
+                        if diff > max_delta:
+                            max_delta = diff
+                        if diff > self.tolerance or math.isnan(diff):
+                            failures.append(
+                                ConversionFailure(
+                                    target_type="DisplayView",
+                                    identifier=f"{display}/{view}",
+                                    input_rgb=rgb,
+                                    delta=diff,
+                                )
+                            )
+            except Exception as e:
+                failures.append(
+                    ConversionFailure(
+                        target_type="DisplayView",
+                        identifier=f"{display}/{view}",
+                        input_rgb=(0.0, 0.0, 0.0),
+                        error_message=str(e),
+                    )
+                )
 
         passed = len(failures) == 0
 
