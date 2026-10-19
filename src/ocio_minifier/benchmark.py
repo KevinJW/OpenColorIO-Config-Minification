@@ -94,6 +94,7 @@ class BenchmarkRunner:
         load_fn: Any | None,
         cli_cmd: list[str] | None,
         orig_cfg: Any | None = None,
+        skip_verify: bool = False,
     ) -> tuple[
         float,
         float | None,
@@ -152,7 +153,10 @@ class BenchmarkRunner:
 
                 min_cfg = last_cfg
 
-                if orig_cfg is not None and min_cfg is not None:
+                if skip_verify:
+                    max_delta = 0.0
+                    fidelity_pass = min_cfg is not None
+                elif orig_cfg is not None and min_cfg is not None:
                     res = self.verifier.verify(orig_cfg, min_cfg)
                     max_delta = res.max_delta
                     fidelity_pass = res.passed
@@ -214,11 +218,16 @@ class BenchmarkRunner:
         orig_cfg: Any | None = None,
         archive_bytes: int | None = None,
         archive_path: str | None = None,
+        baseline_text: str | None = None,
+        skip_verify: bool = False,
     ) -> BenchmarkResult:
         """Measure performance and fidelity of a single minification stage."""
         encoded = content.encode("utf-8")
         raw_size = len(encoded)
         gzip_size = len(gzip.compress(encoded, compresslevel=9))
+        is_identity = skip_verify or (
+            baseline_text is not None and content == baseline_text
+        )
 
         if HAS_OCIO:
             (
@@ -233,6 +242,7 @@ class BenchmarkRunner:
                 lambda: ocio.Config.CreateFromStream(content),
                 None,
                 orig_cfg,
+                skip_verify=is_identity,
             )
         else:
             with tempfile.NamedTemporaryFile("w", suffix=".ocio", delete=False) as f:
@@ -412,6 +422,7 @@ class BenchmarkRunner:
                         baseline_bytes,
                         orig_cfg,
                         archive_path=elide_archive,
+                        baseline_text=source_text,
                     )
                 )
 
@@ -426,6 +437,7 @@ class BenchmarkRunner:
                         baseline_bytes,
                         orig_cfg,
                         archive_path=amf_archive,
+                        baseline_text=source_text,
                     )
                 )
 
@@ -440,6 +452,7 @@ class BenchmarkRunner:
                         baseline_bytes,
                         orig_cfg,
                         archive_path=flow_archive,
+                        baseline_text=source_text,
                     )
                 )
 
@@ -456,6 +469,7 @@ class BenchmarkRunner:
                         baseline_bytes,
                         orig_cfg,
                         archive_path=cdl_archive,
+                        baseline_text=source_text,
                     )
                 )
 
@@ -470,6 +484,7 @@ class BenchmarkRunner:
                         baseline_bytes,
                         orig_cfg,
                         archive_path=yaml_archive,
+                        baseline_text=source_text,
                     )
                 )
 
@@ -484,6 +499,7 @@ class BenchmarkRunner:
                         baseline_bytes,
                         orig_cfg,
                         archive_path=desc_archive,
+                        baseline_text=source_text,
                     )
                 )
 
@@ -500,6 +516,7 @@ class BenchmarkRunner:
                         baseline_bytes,
                         orig_cfg,
                         archive_path=float_archive,
+                        baseline_text=source_text,
                     )
                 )
 
@@ -514,6 +531,7 @@ class BenchmarkRunner:
                         baseline_bytes,
                         orig_cfg,
                         archive_path=syn_archive,
+                        baseline_text=source_text,
                     )
                 )
 
@@ -528,6 +546,7 @@ class BenchmarkRunner:
                         baseline_bytes,
                         orig_cfg,
                         archive_path=max_archive,
+                        baseline_text=source_text,
                     )
                 )
 

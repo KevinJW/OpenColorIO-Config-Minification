@@ -103,3 +103,32 @@ def test_benchmark_archive_stage(ocio_module, minimal_ocio_yaml, tmp_path):
     assert res.raw_bytes == archive_path.stat().st_size
     assert res.parse_time_ms > 0
     assert res.archive_parse_time_ms is not None and res.archive_parse_time_ms > 0
+
+
+@pytest.mark.skipif(
+    not pytest.importorskip("PyOpenColorIO", reason="PyOpenColorIO required"), reason=""
+)
+def test_benchmark_identity_short_circuit(ocio_module, minimal_ocio_yaml):
+    """When content matches baseline_text, verify() should be bypassed and pass immediately."""
+    from unittest.mock import MagicMock
+
+    orig_cfg = ocio_module.ocio.Config.CreateFromStream(minimal_ocio_yaml)
+    baseline_bytes = len(minimal_ocio_yaml.encode("utf-8"))
+
+    mock_verifier = MagicMock()
+    runner = BenchmarkRunner(
+        verifier=mock_verifier, warmup_iterations=0, timing_iterations=1
+    )
+
+    res = runner.benchmark_stage(
+        "Identity Stage",
+        minimal_ocio_yaml,
+        baseline_bytes,
+        orig_cfg=orig_cfg,
+        baseline_text=minimal_ocio_yaml,
+    )
+
+    assert res.max_delta == 0.0
+    assert res.fidelity_passed is True
+    # Verify method was never invoked due to identity short-circuit
+    mock_verifier.verify.assert_not_called()
