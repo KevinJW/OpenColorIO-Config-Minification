@@ -123,8 +123,9 @@ class BenchmarkRunner:
                 # 2. Repeated measurement iterations with GC isolation
                 timings: list[float] = []
                 last_cfg = None
+                gc.collect()
                 for _ in range(self.timing_iterations):
-                    gc.collect()
+                    gc.collect(0)
                     gc_was_enabled = gc.isenabled()
                     gc.disable()
                     try:
