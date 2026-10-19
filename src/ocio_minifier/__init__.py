@@ -2,7 +2,9 @@
 
 from ocio_minifier.benchmark import (
     BenchmarkRunner,
+    create_ocio_archive,
     format_markdown_table,
+    get_ocioz_archive_size,
     run_benchmark,
 )
 from ocio_minifier.exceptions import (
@@ -68,8 +70,10 @@ __all__ = [
     "VerificationResult",
     "YamlAnchorsTransform",
     "__version__",
+    "create_ocio_archive",
     "diff_serialized_configs",
     "format_markdown_table",
+    "get_ocioz_archive_size",
     "ocio",
     "run_benchmark",
     "transform_compact_amf_scalars",

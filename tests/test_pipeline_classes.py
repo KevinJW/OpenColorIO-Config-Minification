@@ -62,11 +62,15 @@ def test_benchmark_runner_and_table_formatter(minimal_ocio_yaml):
     runner = BenchmarkRunner()
     results = runner.run_suite(minimal_ocio_yaml)
 
-    assert len(results) == 10
+    assert len(results) == 12
     assert results[0].name.startswith("Baseline")
     assert all(r.fidelity_passed for r in results)
 
     table = format_markdown_table(results)
     assert "| Transform | Raw Size |" in table
+    assert "| Archive Size |" in table
+    assert "| Archive Load Time (Mean ± Std) |" in table
     assert "Baseline (Unmodified)" in table
     assert "Combined (Syntactic Only)" in table
+    assert "Native OCIO Archive (.ocioz)" in table
+    assert "Minified OCIO Archive (.ocioz)" in table

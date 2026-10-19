@@ -79,18 +79,25 @@ def test_benchmark_result_metrics():
         raw_bytes=80000,
         baseline_bytes=100000,
         gzip_bytes=10000,
+        archive_bytes=10500,
         parse_time_ms=50.25,
         max_delta=0.0,
         fidelity_passed=True,
         parse_time_mean_ms=51.10,
         parse_time_stddev_ms=1.20,
+        archive_parse_time_ms=65.0,
+        archive_parse_time_mean_ms=65.5,
+        archive_parse_time_stddev_ms=1.5,
     )
     assert bench.raw_kb == 80000 / 1024.0
     assert bench.gzip_kb == 10000 / 1024.0
+    assert bench.archive_kb == 10500 / 1024.0
     assert bench.delta_bytes == -20000
     assert "80,000 B" in bench.raw_size_str
     assert "-20,000 B" in bench.delta_str
+    assert "10,500 B" in bench.archive_size_str
     assert "51.10 ± 1.20 ms" in bench.timing_str
+    assert "65.50 ± 1.50 ms" in bench.archive_timing_str
     assert pytest.approx(bench.reduction_pct, 0.1) == 20.0
 
     d = bench.to_dict()
@@ -98,5 +105,9 @@ def test_benchmark_result_metrics():
     assert d["Raw Bytes"] == "80,000 B"
     assert d["Delta Bytes"] == "-20,000 B"
     assert d["Reduction"] == "20.0%"
+    assert d["Gzip Bytes"] == "10,000 B"
+    assert d["Archive Bytes"] == "10,500 B"
+    assert d["Archive (KB)"] == f"{10500 / 1024.0:.2f}"
     assert d["Fidelity"] == "PASS"
     assert d["Parse (ms)"] == "51.10 ± 1.20 ms"
+    assert d["Archive Load (ms)"] == "65.50 ± 1.50 ms"

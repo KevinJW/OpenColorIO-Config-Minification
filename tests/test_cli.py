@@ -93,7 +93,11 @@ def test_cli_benchmark_markdown(capsys):
     assert ret == 0
     captured = capsys.readouterr()
     assert "| Transform | Raw Size |" in captured.out
+    assert "| Archive Size |" in captured.out
+    assert "| Archive Load Time (Mean ± Std) |" in captured.out
     assert "Baseline (Unmodified)" in captured.out
+    assert "Native OCIO Archive (.ocioz)" in captured.out
+    assert "Minified OCIO Archive (.ocioz)" in captured.out
 
 
 def test_cli_benchmark_json(capsys):
@@ -110,6 +114,9 @@ def test_cli_benchmark_json(capsys):
     assert len(data) > 0
     assert "Name" in data[0]
     assert "Raw (KB)" in data[0]
+    assert "Archive Bytes" in data[0]
+    assert "Archive (KB)" in data[0]
+    assert "Archive Load (ms)" in data[0]
 
 
 def test_cli_benchmark_with_iterations(capsys):
@@ -122,3 +129,43 @@ def test_cli_benchmark_with_iterations(capsys):
     assert ret == 0
     captured = capsys.readouterr()
     assert "| Transform | Raw Size |" in captured.out
+    assert "| Archive Size |" in captured.out
+    assert "| Archive Load Time (Mean ± Std) |" in captured.out
+
+
+def test_cli_benchmark_ocioz_input(tmp_path, capsys):
+    """Running benchmark mode with a .ocioz input file should unpack and run benchmarks."""
+    from ocio_minifier.benchmark import create_ocio_archive
+
+    source_file = Path("configs/cg-config-v1.0.0_aces-v1.3_ocio-v2.1.ocio")
+    if not source_file.exists():
+        pytest.skip(f"Config {source_file} not found")
+
+    archive_path = tmp_path / "test_input.ocioz"
+    create_ocio_archive(source_file.read_text(encoding="utf-8"), str(archive_path))
+
+    ret = main([str(archive_path), "--benchmark", "--iterations", "1", "--warmup", "0"])
+    assert ret == 0
+    captured = capsys.readouterr()
+    assert "| Transform | Raw Size |" in captured.out
+    assert "| Archive Size |" in captured.out
+    assert "| Archive Load Time (Mean ± Std) |" in captured.out
+    assert "Native OCIO Archive (.ocioz)" in captured.out
+
+
+def test_cli_minify_from_ocioz_input(tmp_path):
+    """Running minify command with a .ocioz input file should produce valid minified output."""
+    from ocio_minifier.benchmark import create_ocio_archive
+
+    source_file = Path("configs/cg-config-v1.0.0_aces-v1.3_ocio-v2.1.ocio")
+    if not source_file.exists():
+        pytest.skip(f"Config {source_file} not found")
+
+    archive_path = tmp_path / "test_input.ocioz"
+    create_ocio_archive(source_file.read_text(encoding="utf-8"), str(archive_path))
+
+    out_file = tmp_path / "minified_from_archive.ocio"
+    ret = main([str(archive_path), "-o", str(out_file)])
+    assert ret == 0
+    assert out_file.exists()
+    assert out_file.stat().st_size > 0
