@@ -107,51 +107,43 @@ def create_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: Sequence[str] | None = None) -> int:
-    """Main CLI entrypoint."""
-    parser = create_parser()
-    args = parser.parse_args(argv)
+def _load_source_config(config_path: str) -> str:
+    """Load configuration text from an .ocio file or extract from an .ocioz archive."""
+    if config_path.lower().endswith(".ocioz"):
+        cfg = ocio.Config.CreateFromFile(config_path)
+        cfg.validate()
+        serialized: str = cfg.serialize()
+        return serialized
+    with open(config_path, encoding="utf-8") as f:
+        return f.read()
 
-    if not os.path.exists(args.config_path):
-        sys.stderr.write(f"Error: Config file '{args.config_path}' not found.\n")
-        return 1
 
+def _run_benchmark_mode(args: argparse.Namespace, source_content: str) -> int:
+    """Run benchmark suite and output Markdown or JSON."""
     try:
-        if args.config_path.lower().endswith(".ocioz"):
-            cfg = ocio.Config.CreateFromFile(args.config_path)
-            cfg.validate()
-            source_content = cfg.serialize()
-        else:
-            with open(args.config_path, encoding="utf-8") as f:
-                source_content = f.read()
+        runner = BenchmarkRunner(
+            verifier=FidelityVerifier(tolerance=args.tolerance),
+            warmup_iterations=args.warmup,
+            timing_iterations=args.iterations,
+        )
+        results = runner.run_suite(source_content)
     except Exception as e:
-        sys.stderr.write(f"Error reading '{args.config_path}': {e}\n")
+        sys.stderr.write(f"Benchmark error: {e}\n")
         return 1
 
-    # Mode 1: Benchmark Suite
-    if args.benchmark:
-        try:
-            runner = BenchmarkRunner(
-                verifier=FidelityVerifier(tolerance=args.tolerance),
-                warmup_iterations=args.warmup,
-                timing_iterations=args.iterations,
-            )
-            results = runner.run_suite(source_content)
-        except Exception as e:
-            sys.stderr.write(f"Benchmark error: {e}\n")
-            return 1
+    if args.format == "json":
+        json_data = [r.to_dict() for r in results]
+        print(json.dumps(json_data, indent=2))
+    else:
+        print(
+            f"Benchmarking transforms against: {os.path.basename(args.config_path)} ({len(source_content.encode('utf-8')) / 1024.0:.1f} KB)\n"
+        )
+        print(format_markdown_table(results))
+    return 0
 
-        if args.format == "json":
-            json_data = [r.to_dict() for r in results]
-            print(json.dumps(json_data, indent=2))
-        else:
-            print(
-                f"Benchmarking transforms against: {os.path.basename(args.config_path)} ({len(source_content.encode('utf-8')) / 1024.0:.1f} KB)\n"
-            )
-            print(format_markdown_table(results))
-        return 0
 
-    # Mode 2: Minification Pipeline
+def _run_minify_pipeline(args: argparse.Namespace, source_content: str) -> str:
+    """Instantiate and run the appropriate minification pipeline."""
     if args.preset == "aggressive":
         pipeline = MinificationPipeline.preset_aggressive(
             precision=args.precision,
@@ -159,25 +151,23 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     else:
         pipeline = MinificationPipeline.preset_syntactic()
+    return pipeline.run(source_content)
 
-    minified = pipeline.run(source_content)
 
-    # Prepare parsed configs if needed for verification or diff
-    orig_cfg = None
-    cand_cfg = None
-    if args.verify or args.diff:
-        try:
-            orig_cfg = ocio.Config.CreateFromStream(source_content)
-            orig_cfg.validate()
-            cand_cfg = ocio.Config.CreateFromStream(minified)
-            cand_cfg.validate()
-        except Exception as e:
-            sys.stderr.write(f"Configuration validation failed: {e}\n")
-            return 1
+def _verify_and_diff_minified(
+    args: argparse.Namespace, source_content: str, minified: str
+) -> int | None:
+    """Perform fidelity verification and/or diff generation on minified content."""
+    try:
+        orig_cfg = ocio.Config.CreateFromStream(source_content)
+        orig_cfg.validate()
+        cand_cfg = ocio.Config.CreateFromStream(minified)
+        cand_cfg.validate()
+    except Exception as e:
+        sys.stderr.write(f"Configuration validation failed: {e}\n")
+        return 1
 
-    # Optional Fidelity Verification
     if args.verify:
-        assert orig_cfg is not None and cand_cfg is not None
         verifier = FidelityVerifier(tolerance=args.tolerance)
         res = verifier.verify(orig_cfg, cand_cfg)
         if not res.passed:
@@ -191,9 +181,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             f"Fidelity Verification PASSED (Max ΔRGB = {res.max_delta:.2e})\n"
         )
 
-    # Optional Serialized Configuration Diff
     if args.diff:
-        assert orig_cfg is not None and cand_cfg is not None
         diff_text = diff_serialized_configs(orig_cfg, cand_cfg)
         if diff_text:
             sys.stdout.write(diff_text)
@@ -201,28 +189,58 @@ def main(argv: Sequence[str] | None = None) -> int:
             sys.stderr.write(
                 "Serialized configurations are semantically identical (0 diff lines).\n"
             )
+    return None
 
-        if not args.output:
-            return 0
 
-    # Output Handling
-    if args.output:
+def _write_output(output_path: str | None, minified: str, source_content: str) -> int:
+    """Write minified config to file or stdout."""
+    if output_path:
         try:
-            with open(args.output, "w", encoding="utf-8") as f:
+            with open(output_path, "w", encoding="utf-8") as f:
                 f.write(minified)
             orig_len = len(source_content.encode("utf-8"))
             min_len = len(minified.encode("utf-8"))
             reduction = ((orig_len - min_len) / orig_len) * 100.0
             sys.stderr.write(
-                f"Wrote minified configuration to '{args.output}' ({orig_len / 1024:.1f} KB -> {min_len / 1024:.1f} KB, -{reduction:.1f}%)\n"
+                f"Wrote minified configuration to '{output_path}' ({orig_len / 1024:.1f} KB -> {min_len / 1024:.1f} KB, -{reduction:.1f}%)\n"
             )
         except Exception as e:
-            sys.stderr.write(f"Error writing output to '{args.output}': {e}\n")
+            sys.stderr.write(f"Error writing output to '{output_path}': {e}\n")
             return 1
     else:
         sys.stdout.write(minified)
-
     return 0
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """Main CLI entrypoint."""
+    parser = create_parser()
+    args = parser.parse_args(argv)
+
+    if not os.path.exists(args.config_path):
+        sys.stderr.write(f"Error: Config file '{args.config_path}' not found.\n")
+        return 1
+
+    try:
+        source_content = _load_source_config(args.config_path)
+    except Exception as e:
+        sys.stderr.write(f"Error reading '{args.config_path}': {e}\n")
+        return 1
+
+    if args.benchmark:
+        return _run_benchmark_mode(args, source_content)
+
+    minified = _run_minify_pipeline(args, source_content)
+
+    if args.verify or args.diff:
+        exit_code = _verify_and_diff_minified(args, source_content, minified)
+        if exit_code is not None:
+            return exit_code
+
+    if args.diff and not args.output:
+        return 0
+
+    return _write_output(args.output, minified, source_content)
 
 
 if __name__ == "__main__":

@@ -434,3 +434,102 @@ def test_validate_with_ociocheck_not_found():
         passed, msg = validate_with_ociocheck("any_content")
         assert passed is True
         assert "not found" in msg.lower()
+
+
+def test_compare_pixel_outputs_exact_match():
+    """Identical pixel arrays produce zero delta and zero failures."""
+    from ocio_minifier.models import ConversionFailure
+    from ocio_minifier.verification import compare_pixel_outputs
+
+    grid = [(0.0, 0.0, 0.0), (0.5, 0.5, 0.5), (1.0, 1.0, 1.0)]
+    outs = [(0.0, 0.0, 0.0), (0.5, 0.5, 0.5), (1.0, 1.0, 1.0)]
+    failures: list[ConversionFailure] = []
+    max_delta = compare_pixel_outputs(
+        grid,
+        outs,
+        outs,
+        "ColorSpace (Forward)",
+        "SpaceA",
+        1e-6,
+        0.0,
+        failures,
+    )
+    assert max_delta == 0.0
+    assert len(failures) == 0
+
+
+def test_compare_pixel_outputs_within_tolerance():
+    """Differences below tolerance update max_delta but record zero failures."""
+    from ocio_minifier.models import ConversionFailure
+    from ocio_minifier.verification import compare_pixel_outputs
+
+    grid = [(0.18, 0.18, 0.18)]
+    orig = [(0.18, 0.18, 0.18)]
+    cand = [(0.1800001, 0.18, 0.18)]  # delta = 1e-7
+    failures: list[ConversionFailure] = []
+    max_delta = compare_pixel_outputs(
+        grid,
+        orig,
+        cand,
+        "ColorSpace (Forward)",
+        "SpaceA",
+        1e-5,
+        0.0,
+        failures,
+    )
+    assert 0.0 < max_delta <= 1e-6
+    assert len(failures) == 0
+
+
+def test_compare_pixel_outputs_exceeds_tolerance():
+    """Differences exceeding tolerance record a ConversionFailure and update max_delta."""
+    from ocio_minifier.models import ConversionFailure
+    from ocio_minifier.verification import compare_pixel_outputs
+
+    grid = [(0.5, 0.5, 0.5)]
+    orig = [(0.5, 0.5, 0.5)]
+    cand = [(0.52, 0.5, 0.5)]  # delta = 0.02
+    failures: list[ConversionFailure] = []
+    max_delta = compare_pixel_outputs(
+        grid,
+        orig,
+        cand,
+        "DisplayView",
+        "Disp/View",
+        1e-4,
+        0.0,
+        failures,
+    )
+    assert max_delta == pytest.approx(0.02)
+    assert len(failures) == 1
+    assert failures[0].target_type == "DisplayView"
+    assert failures[0].identifier == "Disp/View"
+    assert failures[0].input_rgb == (0.5, 0.5, 0.5)
+    assert failures[0].delta == pytest.approx(0.02)
+
+
+def test_compare_pixel_outputs_nan_handling():
+    """NaN matching NaN is ignored, but NaN vs finite float records a failure."""
+    from ocio_minifier.models import ConversionFailure
+    from ocio_minifier.verification import compare_pixel_outputs
+
+    nan = float("nan")
+    grid = [(0.0, 0.0, 0.0), (1.0, 1.0, 1.0)]
+    # Point 1: both NaN (should not fail)
+    # Point 2: orig is finite, cand is NaN (should fail)
+    orig = [(nan, nan, nan), (1.0, 1.0, 1.0)]
+    cand = [(nan, nan, nan), (nan, 1.0, 1.0)]
+    failures: list[ConversionFailure] = []
+    compare_pixel_outputs(
+        grid,
+        orig,
+        cand,
+        "ColorSpace (Forward)",
+        "NaNSpace",
+        1e-6,
+        0.0,
+        failures,
+    )
+    assert len(failures) == 1
+    assert failures[0].identifier == "NaNSpace"
+    assert failures[0].input_rgb == (1.0, 1.0, 1.0)

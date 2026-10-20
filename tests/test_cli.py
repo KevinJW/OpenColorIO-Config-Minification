@@ -250,3 +250,48 @@ def test_cli_main_module_execution():
         assert exc.value.code == 0
     finally:
         sys.argv = old_argv
+
+
+def test_cli_load_source_config(tmp_path):
+    """_load_source_config reads standard .ocio files cleanly."""
+    from ocio_minifier.cli import _load_source_config
+
+    test_file = tmp_path / "simple.ocio"
+    test_file.write_text("ocio_profile_version: 2.0\n", encoding="utf-8")
+    content = _load_source_config(str(test_file))
+    assert "ocio_profile_version: 2.0" in content
+
+
+def test_cli_run_minify_pipeline():
+    """_run_minify_pipeline respects syntactic and aggressive presets."""
+    import argparse
+
+    from ocio_minifier.cli import _run_minify_pipeline
+
+    yaml_text = "description: remove this\n"
+    args_syn = argparse.Namespace(preset="syntactic")
+    res_syn = _run_minify_pipeline(args_syn, yaml_text)
+    assert "description: remove this" in res_syn
+
+    args_agg = argparse.Namespace(
+        preset="aggressive", precision=None, preserve_invariants=True
+    )
+    res_agg = _run_minify_pipeline(args_agg, yaml_text)
+    assert "description" not in res_agg
+
+
+def test_cli_write_output(tmp_path, capsys):
+    """_write_output writes to stdout if output is None and writes to file if specified."""
+    from ocio_minifier.cli import _write_output
+
+    # Stdout branch
+    ret_stdout = _write_output(None, "minified_content", "original_content")
+    assert ret_stdout == 0
+    captured = capsys.readouterr()
+    assert captured.out == "minified_content"
+
+    # File branch
+    target = tmp_path / "written.ocio"
+    ret_file = _write_output(str(target), "minified_content", "original_content")
+    assert ret_file == 0
+    assert target.read_text(encoding="utf-8") == "minified_content"

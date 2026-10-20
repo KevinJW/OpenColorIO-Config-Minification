@@ -40,6 +40,7 @@ from ocio_minifier.transforms import (
 from ocio_minifier.verification import (
     DEFAULT_PIXEL_GRID,
     FidelityVerifier,
+    compare_pixel_outputs,
     diff_serialized_configs,
     ocio,
     validate_with_ociocheck,
@@ -68,6 +69,7 @@ __all__ = [
     "TransformError",
     "VerificationResult",
     "YamlAnchorsTransform",
+    "compare_pixel_outputs",
     "__version__",
     "create_ocio_archive",
     "diff_serialized_configs",

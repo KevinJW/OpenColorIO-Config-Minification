@@ -7,6 +7,7 @@ import statistics
 import sys
 import tempfile
 import time
+from collections.abc import Callable
 from typing import Any
 
 import PyOpenColorIO as ocio
@@ -16,6 +17,8 @@ from ocio_minifier.pipeline import MinificationPipeline
 from ocio_minifier.transforms import (
     CompactAmfScalarsTransform,
     ElideDefaultsTransform,
+    FloatPrecisionTransform,
+    FlowCdlTransformsTransform,
     FlowTransformsTransform,
     StripDescriptionsTransform,
     YamlAnchorsTransform,
@@ -276,6 +279,77 @@ class BenchmarkRunner:
             archive_parse_time_stddev_ms=parse_time_stddev_ms,
         )
 
+    @staticmethod
+    def get_standard_stages() -> list[tuple[str, Callable[[str], str], str]]:
+        """Return ordered list of standard transform benchmark stage definitions: (name, transform_fn, tag)."""
+        return [
+            (
+                "Default Field Elision",
+                lambda s: ElideDefaultsTransform().apply(s),
+                "elide",
+            ),
+            (
+                "Compact AMF Scalars",
+                lambda s: CompactAmfScalarsTransform().apply(s),
+                "amf",
+            ),
+            (
+                "Flow Transform Inlining",
+                lambda s: FlowTransformsTransform().apply(s),
+                "flow",
+            ),
+            (
+                "CDL Flow Inlining",
+                lambda s: FlowCdlTransformsTransform().apply(s),
+                "cdl",
+            ),
+            (
+                "YAML Anchors & Aliases",
+                lambda s: YamlAnchorsTransform().apply(s),
+                "yaml",
+            ),
+            (
+                "Strip Descriptions (Lossy)",
+                lambda s: StripDescriptionsTransform().apply(s),
+                "desc",
+            ),
+            (
+                "Float Rounding [7 Decimals] (Lossy)",
+                lambda s: FloatPrecisionTransform(decimals=7).apply(s),
+                "float",
+            ),
+            (
+                "Combined (Syntactic Only)",
+                lambda s: MinificationPipeline.preset_syntactic().run(s),
+                "syn",
+            ),
+            (
+                "Combined (Max / Lossy Desc)",
+                lambda s: MinificationPipeline.preset_aggressive().run(s),
+                "max",
+            ),
+        ]
+
+    def _execute_stage(
+        self,
+        name: str,
+        content: str,
+        baseline_bytes: int,
+        orig_cfg: Any,
+        archive_path: str,
+        source_text: str,
+    ) -> BenchmarkResult:
+        """Run a single benchmark stage with an archive file."""
+        create_ocio_archive(content, archive_path)
+        return self.benchmark_stage(
+            name,
+            content,
+            baseline_bytes,
+            orig_cfg,
+            archive_path=archive_path,
+            baseline_text=source_text,
+        )
+
     def run_suite(self, source_text: str) -> list[BenchmarkResult]:
         """Run all standard benchmark stages against source OCIO configuration text."""
         baseline_bytes = len(source_text.encode("utf-8"))
@@ -314,144 +388,29 @@ class BenchmarkRunner:
                     )
                 )
 
-                # 1. Default Field Elision
-                t_elide = ElideDefaultsTransform().apply(source_text)
-                elide_archive = os.path.join(suite_td, "elide.ocioz")
-                create_ocio_archive(t_elide, elide_archive)
-                results.append(
-                    self.benchmark_stage(
-                        "Default Field Elision",
-                        t_elide,
-                        baseline_bytes,
-                        orig_cfg,
-                        archive_path=elide_archive,
-                        baseline_text=source_text,
-                    )
-                )
-
-                # 2. Compact AMF Scalars
-                t_amf = CompactAmfScalarsTransform().apply(source_text)
-                amf_archive = os.path.join(suite_td, "amf.ocioz")
-                create_ocio_archive(t_amf, amf_archive)
-                results.append(
-                    self.benchmark_stage(
-                        "Compact AMF Scalars",
-                        t_amf,
-                        baseline_bytes,
-                        orig_cfg,
-                        archive_path=amf_archive,
-                        baseline_text=source_text,
-                    )
-                )
-
-                # 3. Flow Transform Inlining
-                t_flow = FlowTransformsTransform().apply(source_text)
-                flow_archive = os.path.join(suite_td, "flow.ocioz")
-                create_ocio_archive(t_flow, flow_archive)
-                results.append(
-                    self.benchmark_stage(
-                        "Flow Transform Inlining",
-                        t_flow,
-                        baseline_bytes,
-                        orig_cfg,
-                        archive_path=flow_archive,
-                        baseline_text=source_text,
-                    )
-                )
-
-                # 4. CDL Transform Flow Inlining
-                from ocio_minifier.transforms import FlowCdlTransformsTransform
-
-                t_cdl = FlowCdlTransformsTransform().apply(source_text)
-                cdl_archive = os.path.join(suite_td, "cdl.ocioz")
-                create_ocio_archive(t_cdl, cdl_archive)
-                results.append(
-                    self.benchmark_stage(
-                        "CDL Flow Inlining",
-                        t_cdl,
-                        baseline_bytes,
-                        orig_cfg,
-                        archive_path=cdl_archive,
-                        baseline_text=source_text,
-                    )
-                )
-
-                # 5. YAML Anchors & Aliases
-                t_yaml = YamlAnchorsTransform().apply(source_text)
-                yaml_archive = os.path.join(suite_td, "yaml.ocioz")
-                create_ocio_archive(t_yaml, yaml_archive)
-                results.append(
-                    self.benchmark_stage(
-                        "YAML Anchors & Aliases",
-                        t_yaml,
-                        baseline_bytes,
-                        orig_cfg,
-                        archive_path=yaml_archive,
-                        baseline_text=source_text,
-                    )
-                )
-
-                # 6. Strip Descriptions (Lossy)
-                t_desc = StripDescriptionsTransform().apply(source_text)
-                desc_archive = os.path.join(suite_td, "desc.ocioz")
-                create_ocio_archive(t_desc, desc_archive)
-                results.append(
-                    self.benchmark_stage(
-                        "Strip Descriptions (Lossy)",
-                        t_desc,
-                        baseline_bytes,
-                        orig_cfg,
-                        archive_path=desc_archive,
-                        baseline_text=source_text,
-                    )
-                )
-
-                # 7. Float Precision Rounding (Lossy)
-                from ocio_minifier.transforms import FloatPrecisionTransform
-
-                t_float = FloatPrecisionTransform(decimals=7).apply(source_text)
-                float_archive = os.path.join(suite_td, "float.ocioz")
-                create_ocio_archive(t_float, float_archive)
-                results.append(
-                    self.benchmark_stage(
-                        "Float Rounding [7 Decimals] (Lossy)",
-                        t_float,
-                        baseline_bytes,
-                        orig_cfg,
-                        archive_path=float_archive,
-                        baseline_text=source_text,
-                    )
-                )
-
-                # 8. Combined (Syntactic Only)
-                t_syn = MinificationPipeline.preset_syntactic().run(source_text)
-                syn_archive = os.path.join(suite_td, "syn.ocioz")
-                create_ocio_archive(t_syn, syn_archive)
-                results.append(
-                    self.benchmark_stage(
-                        "Combined (Syntactic Only)",
-                        t_syn,
-                        baseline_bytes,
-                        orig_cfg,
-                        archive_path=syn_archive,
-                        baseline_text=source_text,
-                    )
-                )
-
-                # 9. Combined (Max / Lossy Desc)
-                t_max = MinificationPipeline.preset_aggressive().run(source_text)
+                # 1-9. Standard Transform Stages
                 max_archive = os.path.join(suite_td, "max.ocioz")
-                create_ocio_archive(t_max, max_archive)
-                results.append(
-                    self.benchmark_stage(
-                        "Combined (Max / Lossy Desc)",
-                        t_max,
-                        baseline_bytes,
-                        orig_cfg,
-                        archive_path=max_archive,
-                        baseline_text=source_text,
+                for (
+                    stage_name,
+                    transform_fn,
+                    tag,
+                ) in self.get_standard_stages():
+                    content = transform_fn(source_text)
+                    archive_path = (
+                        max_archive
+                        if tag == "max"
+                        else os.path.join(suite_td, f"{tag}.ocioz")
                     )
-                )
+                    results.append(
+                        self._execute_stage(
+                            stage_name,
+                            content,
+                            baseline_bytes,
+                            orig_cfg,
+                            archive_path,
+                            source_text,
+                        )
+                    )
 
                 # 10. Native OCIO Archive (.ocioz) - reuses baseline_archive!
                 results.append(

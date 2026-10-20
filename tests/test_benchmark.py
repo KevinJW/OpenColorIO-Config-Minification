@@ -168,3 +168,39 @@ def test_run_suite_ociocheck_warning(minimal_ocio_yaml, capsys):
         "Warning: ociocheck validation reported issues: Simulated missing LUT"
         in captured.err
     )
+
+
+def test_benchmark_runner_standard_stages(minimal_ocio_yaml):
+    """get_standard_stages should return 9 registered stages with working transform functions."""
+    stages = BenchmarkRunner.get_standard_stages()
+    assert len(stages) == 9
+    for name, transform_fn, tag in stages:
+        assert isinstance(name, str)
+        assert isinstance(tag, str)
+        transformed = transform_fn(minimal_ocio_yaml)
+        assert isinstance(transformed, str)
+        assert len(transformed) > 0
+
+
+def test_benchmark_runner_execute_stage(minimal_ocio_yaml, tmp_path):
+    """_execute_stage should create the archive file and return a valid BenchmarkResult."""
+    import os
+
+    import PyOpenColorIO as ocio
+
+    orig_cfg = ocio.Config.CreateFromStream(minimal_ocio_yaml)
+    baseline_bytes = len(minimal_ocio_yaml.encode("utf-8"))
+    archive_path = str(tmp_path / "test_exec.ocioz")
+
+    runner = BenchmarkRunner(warmup_iterations=1, timing_iterations=1)
+    res = runner._execute_stage(
+        "Exec Stage",
+        minimal_ocio_yaml,
+        baseline_bytes,
+        orig_cfg,
+        archive_path,
+        minimal_ocio_yaml,
+    )
+    assert res.name == "Exec Stage"
+    assert res.archive_bytes > 0
+    assert os.path.exists(archive_path)
