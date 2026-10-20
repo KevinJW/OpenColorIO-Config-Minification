@@ -115,10 +115,14 @@ class BenchmarkRunner:
 
         if HAS_OCIO and load_fn is not None:
             try:
-                # 1. Warmup iterations
-                for _ in range(self.warmup_iterations):
-                    warm_cfg = load_fn()
-                    warm_cfg.validate()
+                # 1. Warmup and validation
+                if self.warmup_iterations > 0:
+                    for _ in range(self.warmup_iterations):
+                        warm_cfg = load_fn()
+                        warm_cfg.validate()
+                else:
+                    initial_cfg = load_fn()
+                    initial_cfg.validate()
 
                 # 2. Repeated measurement iterations with GC isolation
                 timings: list[float] = []
@@ -131,7 +135,6 @@ class BenchmarkRunner:
                     try:
                         start = time.perf_counter()
                         last_cfg = load_fn()
-                        last_cfg.validate()
                         end = time.perf_counter()
                         timings.append((end - start) * 1000.0)
                     finally:
