@@ -12,14 +12,12 @@ from ocio_minifier.transforms.flow import transform_flow_transforms
 from ocio_minifier.transforms.precision import transform_float_precision
 from ocio_minifier.transforms.yaml_anchors import transform_yaml_anchors
 from ocio_minifier.verification import (
-    HAS_OCIO,
     FidelityVerifier,
     diff_serialized_configs,
     ocio,
 )
 
 
-@pytest.mark.skipif(not HAS_OCIO, reason="PyOpenColorIO required")
 def test_diff_serialized_identical_configs(minimal_ocio_yaml):
     """Diffing serialized representations of identical configs must produce an empty string."""
     cfg1 = ocio.Config.CreateFromStream(minimal_ocio_yaml)
@@ -29,7 +27,6 @@ def test_diff_serialized_identical_configs(minimal_ocio_yaml):
     assert diff == ""
 
 
-@pytest.mark.skipif(not HAS_OCIO, reason="PyOpenColorIO required")
 def test_diff_serialized_lossless_transforms_produce_zero_diff(sample_config_text):
     """Lossless transforms and full syntactic pipeline must yield 100% identical serialized OCIO profiles."""
     orig_cfg = ocio.Config.CreateFromStream(sample_config_text)
@@ -66,7 +63,6 @@ def test_diff_serialized_lossless_transforms_produce_zero_diff(sample_config_tex
     assert diff_serialized_configs(orig_cfg, syntactic_cfg) == ""
 
 
-@pytest.mark.skipif(not HAS_OCIO, reason="PyOpenColorIO required")
 def test_diff_serialized_lossy_transforms_show_targeted_diffs(sample_config_text):
     """Lossy transforms (description strip, precision) must show precise semantic diffs."""
     orig_cfg = ocio.Config.CreateFromStream(sample_config_text)
@@ -85,7 +81,6 @@ def test_diff_serialized_lossy_transforms_show_targeted_diffs(sample_config_text
     assert "--- original_serialized.ocio" in prec_diff
 
 
-@pytest.mark.skipif(not HAS_OCIO, reason="PyOpenColorIO required")
 def test_fidelity_verifier_with_serialized_diff(minimal_ocio_yaml):
     """FidelityVerifier with include_serialized_diff=True should populate serialized_diff field."""
     orig_cfg = ocio.Config.CreateFromStream(minimal_ocio_yaml)
@@ -97,7 +92,6 @@ def test_fidelity_verifier_with_serialized_diff(minimal_ocio_yaml):
     assert res.serialized_diff == ""
 
 
-@pytest.mark.skipif(not HAS_OCIO, reason="PyOpenColorIO required")
 def test_cli_diff_option(capsys):
     """CLI --diff option should print serialized unified diff."""
     source_file = Path("configs/cg-config-v1.0.0_aces-v1.3_ocio-v2.1.ocio")

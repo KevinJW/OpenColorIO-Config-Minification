@@ -1,6 +1,3 @@
-import pytest
-
-
 def test_strip_single_line_double_quotes(ocio_module):
     """Single line description in double quotes should be stripped."""
     yaml_src = (
@@ -93,9 +90,6 @@ def test_strip_descriptions_idempotency(ocio_module):
     assert pass1 == pass2
 
 
-@pytest.mark.skipif(
-    not pytest.importorskip("PyOpenColorIO", reason="PyOpenColorIO required"), reason=""
-)
 def test_strip_descriptions_maintains_valid_config(ocio_module, minimal_ocio_yaml):
     """Stripping descriptions from an OCIO config must yield a valid, parseable config."""
     yaml_with_desc = (

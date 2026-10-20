@@ -5,9 +5,6 @@ import pytest
 from tests.test_basic import ALL_CONFIG_FILES
 
 
-@pytest.mark.skipif(
-    not pytest.importorskip("PyOpenColorIO", reason="PyOpenColorIO required"), reason=""
-)
 class TestPipelineIntegration:
     """End-to-end integration tests verifying every transform on the studio OCIO config."""
 

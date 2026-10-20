@@ -1,6 +1,3 @@
-import pytest
-
-
 def test_single_occurrence_no_anchor(ocio_module):
     """A transform appearing only once must not generate an anchor or alias."""
     yaml_src = "transform: !<MatrixTransform> {matrix: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]}\n"
@@ -84,9 +81,6 @@ def test_scientific_notation_in_matrix(ocio_module):
     assert "*matrix_ref_0" in result
 
 
-@pytest.mark.skipif(
-    not pytest.importorskip("PyOpenColorIO", reason="PyOpenColorIO required"), reason=""
-)
 def test_mixed_anchors_parsed_by_ocio(ocio_module, minimal_ocio_yaml):
     """OCIO parser should resolve anchors and aliases across matrix and builtin types."""
     # Add repeated colorspaces and views

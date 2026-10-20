@@ -1,18 +1,11 @@
 import os
 
+import PyOpenColorIO as ocio
 import pytest
-
-try:
-    import PyOpenColorIO as ocio
-
-    HAS_OCIO = True
-except ImportError:
-    HAS_OCIO = False
 
 
 def test_ocio_available():
     """Verify PyOpenColorIO is installed and importable."""
-    assert HAS_OCIO is True
     assert hasattr(ocio, "__version__")
     assert ocio.__version__ is not None
 
@@ -32,7 +25,6 @@ ALL_CONFIG_FILES = [
 ]
 
 
-@pytest.mark.skipif(not HAS_OCIO, reason="PyOpenColorIO not available")
 def test_load_sample_config():
     """Verify the sample studio OCIO configuration parses and validates cleanly."""
     sample_file = os.path.join(
@@ -52,7 +44,6 @@ def test_load_sample_config():
     )
 
 
-@pytest.mark.skipif(not HAS_OCIO, reason="PyOpenColorIO not available")
 @pytest.mark.parametrize("config_filename", ALL_CONFIG_FILES)
 def test_load_all_builtin_configs(config_filename):
     """Verify every configuration in configs/ parses and validates cleanly with PyOpenColorIO."""

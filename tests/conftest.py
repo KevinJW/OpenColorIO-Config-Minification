@@ -29,8 +29,6 @@ def sample_config_text():
 @pytest.fixture(scope="session")
 def sample_ocio_config(ocio_module, sample_config_text):
     """Parse and validate the studio sample OCIO configuration object."""
-    if not ocio_module.HAS_OCIO:
-        pytest.skip("PyOpenColorIO is not available in environment")
     cfg = ocio_module.ocio.Config.CreateFromStream(sample_config_text)
     cfg.validate()
     return cfg

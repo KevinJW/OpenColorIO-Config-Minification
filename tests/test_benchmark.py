@@ -1,11 +1,6 @@
-import pytest
-
 from ocio_minifier.benchmark import BenchmarkRunner
 
 
-@pytest.mark.skipif(
-    not pytest.importorskip("PyOpenColorIO", reason="PyOpenColorIO required"), reason=""
-)
 def test_run_benchmark_baseline_entry(ocio_module, minimal_ocio_yaml):
     """Running benchmark for a baseline entry without orig_cfg should succeed with 0% reduction."""
     baseline_bytes = len(minimal_ocio_yaml.encode("utf-8"))
@@ -28,9 +23,6 @@ def test_run_benchmark_baseline_entry(ocio_module, minimal_ocio_yaml):
     assert "Max ΔRGB" in result
 
 
-@pytest.mark.skipif(
-    not pytest.importorskip("PyOpenColorIO", reason="PyOpenColorIO required"), reason=""
-)
 def test_run_benchmark_reduction_and_fidelity(ocio_module, minimal_ocio_yaml):
     """Running benchmark on a transformed config should measure reduction and verify fidelity."""
     orig_cfg = ocio_module.ocio.Config.CreateFromStream(minimal_ocio_yaml)
@@ -49,9 +41,6 @@ def test_run_benchmark_reduction_and_fidelity(ocio_module, minimal_ocio_yaml):
     assert "Archive Bytes" in result
 
 
-@pytest.mark.skipif(
-    not pytest.importorskip("PyOpenColorIO", reason="PyOpenColorIO required"), reason=""
-)
 def test_benchmark_runner_robust_timing(minimal_ocio_yaml):
     """BenchmarkRunner should execute multiple iterations and record min and stddev statistics."""
     runner = BenchmarkRunner(
@@ -78,9 +67,6 @@ def test_get_ocioz_archive_size(ocio_module, minimal_ocio_yaml):
     assert size < len(minimal_ocio_yaml.encode("utf-8"))
 
 
-@pytest.mark.skipif(
-    not pytest.importorskip("PyOpenColorIO", reason="PyOpenColorIO required"), reason=""
-)
 def test_benchmark_archive_stage(ocio_module, minimal_ocio_yaml, tmp_path):
     """BenchmarkRunner should measure archive stages from .ocioz files directly."""
     orig_cfg = ocio_module.ocio.Config.CreateFromStream(minimal_ocio_yaml)
@@ -105,9 +91,6 @@ def test_benchmark_archive_stage(ocio_module, minimal_ocio_yaml, tmp_path):
     assert res.archive_parse_time_ms is not None and res.archive_parse_time_ms > 0
 
 
-@pytest.mark.skipif(
-    not pytest.importorskip("PyOpenColorIO", reason="PyOpenColorIO required"), reason=""
-)
 def test_benchmark_identity_short_circuit(ocio_module, minimal_ocio_yaml):
     """When content matches baseline_text, verify() should be bypassed and pass immediately."""
     from unittest.mock import MagicMock

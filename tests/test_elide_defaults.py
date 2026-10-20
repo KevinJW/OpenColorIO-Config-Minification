@@ -1,6 +1,3 @@
-import pytest
-
-
 def test_elide_equalitygroup_empty(ocio_module):
     """Empty equalitygroup quotes should be elided."""
     yaml_src = (
@@ -92,9 +89,6 @@ def test_elide_defaults_crlf_handling(ocio_module):
     assert "name: Test" in result
 
 
-@pytest.mark.skipif(
-    not pytest.importorskip("PyOpenColorIO", reason="PyOpenColorIO required"), reason=""
-)
 def test_elide_defaults_valid_ocio(ocio_module, minimal_ocio_yaml):
     """Transformed minimal config must parse and validate in PyOpenColorIO."""
     result = ocio_module.transform_elide_defaults(minimal_ocio_yaml)

@@ -39,17 +39,16 @@ from ocio_minifier.transforms import (
 )
 from ocio_minifier.verification import (
     DEFAULT_PIXEL_GRID,
-    HAS_OCIO,
     FidelityVerifier,
     diff_serialized_configs,
     ocio,
+    validate_with_ociocheck,
     verify_dag_fidelity,
 )
 
 __version__ = "0.1.0"
 __all__ = [
     "DEFAULT_PIXEL_GRID",
-    "HAS_OCIO",
     "BenchmarkResult",
     "BenchmarkRunner",
     "CompactAmfScalarsTransform",
@@ -83,5 +82,6 @@ __all__ = [
     "transform_flow_transforms",
     "transform_strip_descriptions",
     "transform_yaml_anchors",
+    "validate_with_ociocheck",
     "verify_dag_fidelity",
 ]

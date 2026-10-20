@@ -3,19 +3,17 @@
 import argparse
 import json
 import os
-import subprocess  # nosec B404
 import sys
-import tempfile
 from collections.abc import Sequence
+
+import PyOpenColorIO as ocio
 
 from ocio_minifier import __version__
 from ocio_minifier.benchmark import BenchmarkRunner, format_markdown_table
 from ocio_minifier.pipeline import MinificationPipeline
 from ocio_minifier.verification import (
-    HAS_OCIO,
     FidelityVerifier,
     diff_serialized_configs,
-    ocio,
 )
 
 DEFAULT_CONFIG_PATH = os.path.join(
@@ -120,20 +118,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     try:
         if args.config_path.lower().endswith(".ocioz"):
-            if HAS_OCIO:
-                cfg = ocio.Config.CreateFromFile(args.config_path)
-                cfg.validate()
-                source_content = cfg.serialize()
-            else:
-                with tempfile.TemporaryDirectory() as td:
-                    subprocess.run(
-                        ["ocioarchive", "--extract", args.config_path, "--dir", td],
-                        capture_output=True,
-                        check=True,
-                    )  # nosec B603, B607
-                    config_ocio = os.path.join(td, "config.ocio")
-                    with open(config_ocio, encoding="utf-8") as f:
-                        source_content = f.read()
+            cfg = ocio.Config.CreateFromFile(args.config_path)
+            cfg.validate()
+            source_content = cfg.serialize()
         else:
             with open(args.config_path, encoding="utf-8") as f:
                 source_content = f.read()
@@ -177,11 +164,6 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     # Optional Fidelity Verification
     if args.verify:
-        if not HAS_OCIO:
-            sys.stderr.write(
-                "Error: PyOpenColorIO is required to run mathematical fidelity verification.\n"
-            )
-            return 1
         try:
             orig_cfg = ocio.Config.CreateFromStream(source_content)
             orig_cfg.validate()
@@ -206,11 +188,6 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     # Optional Serialized Configuration Diff
     if args.diff:
-        if not HAS_OCIO:
-            sys.stderr.write(
-                "Error: PyOpenColorIO is required to serialize and diff configurations.\n"
-            )
-            return 1
         try:
             orig_cfg = ocio.Config.CreateFromStream(source_content)
             orig_cfg.validate()

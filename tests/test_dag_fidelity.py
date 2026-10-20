@@ -24,9 +24,6 @@ colorspaces:
 """
 
 
-@pytest.mark.skipif(
-    not pytest.importorskip("PyOpenColorIO", reason="PyOpenColorIO required"), reason=""
-)
 def test_dag_fidelity_identical_configs(ocio_module, dag_test_yaml):
     """Identical configurations must return passed=True with zero delta and no errors."""
     orig = ocio_module.ocio.Config.CreateFromStream(dag_test_yaml)
@@ -40,9 +37,6 @@ def test_dag_fidelity_identical_configs(ocio_module, dag_test_yaml):
     assert len(failed_conversions) == 0
 
 
-@pytest.mark.skipif(
-    not pytest.importorskip("PyOpenColorIO", reason="PyOpenColorIO required"), reason=""
-)
 def test_dag_fidelity_detects_matrix_perturbation(ocio_module, dag_test_yaml):
     """Perturbing a matrix transform must be detected as a fidelity failure with delta > tolerance."""
     orig = ocio_module.ocio.Config.CreateFromStream(dag_test_yaml)
@@ -62,9 +56,6 @@ def test_dag_fidelity_detects_matrix_perturbation(ocio_module, dag_test_yaml):
     assert any("TestSpace" in fail for fail in failed_conversions)
 
 
-@pytest.mark.skipif(
-    not pytest.importorskip("PyOpenColorIO", reason="PyOpenColorIO required"), reason=""
-)
 def test_dag_fidelity_tolerance_threshold(ocio_module, dag_test_yaml):
     """A perturbation within tolerance should pass, while exceeding tolerance must fail."""
     orig = ocio_module.ocio.Config.CreateFromStream(dag_test_yaml)
@@ -88,9 +79,6 @@ def test_dag_fidelity_tolerance_threshold(ocio_module, dag_test_yaml):
     assert delta_strict > 1e-7
 
 
-@pytest.mark.skipif(
-    not pytest.importorskip("PyOpenColorIO", reason="PyOpenColorIO required"), reason=""
-)
 def test_dag_fidelity_displays_and_views(
     ocio_module, sample_ocio_config, sample_config_text
 ):
@@ -104,9 +92,6 @@ def test_dag_fidelity_displays_and_views(
     assert len(fails) == 0
 
 
-@pytest.mark.skipif(
-    not pytest.importorskip("PyOpenColorIO", reason="PyOpenColorIO required"), reason=""
-)
 def test_fidelity_verifier_orig_cache(
     ocio_module, sample_ocio_config, sample_config_text
 ):
@@ -137,9 +122,6 @@ def test_fidelity_verifier_orig_cache(
     assert len(verifier._orig_cache) == 0
 
 
-@pytest.mark.skipif(
-    not pytest.importorskip("PyOpenColorIO", reason="PyOpenColorIO required"), reason=""
-)
 def test_fidelity_verifier_deduplicates_display_views(ocio_module):
     """FidelityVerifier should deduplicate displays and views sharing the same view_transform."""
     from ocio_minifier.verification import FidelityVerifier
@@ -175,9 +157,6 @@ colorspaces:
     assert res.evaluated_views == 1
 
 
-@pytest.mark.skipif(
-    not pytest.importorskip("PyOpenColorIO", reason="PyOpenColorIO required"), reason=""
-)
 def test_fidelity_verifier_different_display_colorspaces_not_deduplicated(ocio_module):
     """Views sharing view_transform name but having different display colorspaces must not be merged."""
     from ocio_minifier.verification import FidelityVerifier
@@ -207,9 +186,6 @@ colorspaces:
     assert res.evaluated_views == 2
 
 
-@pytest.mark.skipif(
-    not pytest.importorskip("PyOpenColorIO", reason="PyOpenColorIO required"), reason=""
-)
 def test_fidelity_verifier_different_looks_not_deduplicated(ocio_module):
     """Views with identical view_transform and display_colorspace but different looks must not be merged."""
     from ocio_minifier.verification import FidelityVerifier
@@ -240,9 +216,6 @@ colorspaces:
     assert res.evaluated_views == 2
 
 
-@pytest.mark.skipif(
-    not pytest.importorskip("PyOpenColorIO", reason="PyOpenColorIO required"), reason=""
-)
 def test_fidelity_verifier_different_rules_not_deduplicated(ocio_module):
     """Views with identical transform parameters but different viewing rules must not be merged."""
     from ocio_minifier.verification import FidelityVerifier
@@ -270,9 +243,6 @@ colorspaces:
     assert res.evaluated_views == 2
 
 
-@pytest.mark.skipif(
-    not pytest.importorskip("PyOpenColorIO", reason="PyOpenColorIO required"), reason=""
-)
 def test_fidelity_verifier_shared_views_deduplicated(ocio_module):
     """Shared views referenced across multiple displays should be safely deduplicated."""
     from ocio_minifier.verification import FidelityVerifier
@@ -298,3 +268,37 @@ colorspaces:
     assert res.passed is True
     # 2 displays referencing the same shared view -> deduplicated to 1
     assert res.evaluated_views == 1
+
+
+def test_validate_with_ociocheck_valid(sample_config_text):
+    """validate_with_ociocheck should pass on valid configs."""
+    from ocio_minifier.verification import validate_with_ociocheck
+
+    passed, msg = validate_with_ociocheck(sample_config_text)
+    assert passed is True
+
+
+def test_validate_with_ociocheck_missing_lut():
+    """validate_with_ociocheck should fail when referenced external LUT file is missing."""
+    import shutil
+
+    from ocio_minifier.verification import validate_with_ociocheck
+
+    if not shutil.which("ociocheck"):
+        pytest.skip("ociocheck executable not found on PATH")
+
+    invalid_yaml = """ocio_profile_version: 2.0
+search_path: .
+roles: {default: Raw, scene_linear: Raw}
+displays:
+  Disp:
+    - !<View> {name: View, colorspace: Raw}
+colorspaces:
+  - !<ColorSpace>
+    name: Raw
+    isdata: true
+    to_reference: !<FileTransform> {src: non_existent_file.cube}
+"""
+    passed, msg = validate_with_ociocheck(invalid_yaml)
+    assert passed is False
+    assert "non_existent_file" in msg.lower()

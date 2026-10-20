@@ -1,12 +1,10 @@
-import pytest
-
 from ocio_minifier.benchmark import BenchmarkRunner, format_markdown_table
 from ocio_minifier.pipeline import MinificationPipeline
 from ocio_minifier.transforms import (
     ElideDefaultsTransform,
     StripDescriptionsTransform,
 )
-from ocio_minifier.verification import HAS_OCIO, FidelityVerifier
+from ocio_minifier.verification import FidelityVerifier
 
 
 def test_pipeline_composition(minimal_ocio_yaml):
@@ -40,7 +38,6 @@ def test_pipeline_presets():
     assert agg.is_lossy is True
 
 
-@pytest.mark.skipif(not HAS_OCIO, reason="PyOpenColorIO required")
 def test_fidelity_verifier_bidirectional(sample_ocio_config, sample_config_text):
     """FidelityVerifier evaluates bidirectional parity and view transforms."""
     verifier = FidelityVerifier(tolerance=1e-6, check_inverse=True)
@@ -56,7 +53,6 @@ def test_fidelity_verifier_bidirectional(sample_ocio_config, sample_config_text)
     assert result.failure_count == 0
 
 
-@pytest.mark.skipif(not HAS_OCIO, reason="PyOpenColorIO required")
 def test_benchmark_runner_and_table_formatter(minimal_ocio_yaml):
     """BenchmarkRunner should execute stages and produce markdown tables."""
     runner = BenchmarkRunner()

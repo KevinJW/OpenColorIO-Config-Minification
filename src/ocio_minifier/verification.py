@@ -3,17 +3,14 @@
 import contextlib
 import difflib
 import math
+import os
+import subprocess  # nosec B404
+import tempfile
 from typing import Any
 
+import PyOpenColorIO as ocio
+
 from ocio_minifier.models import ConversionFailure, VerificationResult
-
-try:
-    import PyOpenColorIO as ocio
-
-    HAS_OCIO = True
-except ImportError:
-    ocio = None  # type: ignore[assignment]
-    HAS_OCIO = False
 
 DEFAULT_PIXEL_GRID: list[tuple[float, float, float]] = [
     (0.0, 0.0, 0.0),
@@ -163,7 +160,7 @@ class FidelityVerifier:
 
     def verify(self, orig_cfg: Any, candidate_cfg: Any) -> VerificationResult:
         """Evaluate pixel parity between orig_cfg and candidate_cfg."""
-        if not HAS_OCIO or orig_cfg is None or candidate_cfg is None:
+        if orig_cfg is None or candidate_cfg is None:
             return VerificationResult(
                 passed=False,
                 max_delta=0.0,
@@ -173,7 +170,7 @@ class FidelityVerifier:
                         target_type="System",
                         identifier="PyOpenColorIO",
                         input_rgb=(0.0, 0.0, 0.0),
-                        error_message="PyOpenColorIO is not available or configuration is None",
+                        error_message="Configuration is None",
                     )
                 ],
             )
@@ -371,10 +368,8 @@ def diff_serialized_configs(
     to_label: str = "minified_serialized.ocio",
 ) -> str:
     """Serialize orig_cfg and candidate_cfg using PyOpenColorIO and return a unified diff."""
-    if not HAS_OCIO or orig_cfg is None or candidate_cfg is None:
-        raise ValueError(
-            "PyOpenColorIO is required and both configurations must be non-None"
-        )
+    if orig_cfg is None or candidate_cfg is None:
+        raise ValueError("Both configurations must be non-None")
 
     orig_text = orig_cfg.serialize()
     cand_text = candidate_cfg.serialize()
@@ -388,6 +383,43 @@ def diff_serialized_configs(
         )
     )
     return "".join(diff_lines)
+
+
+def validate_with_ociocheck(config_path_or_content: str) -> tuple[bool, str]:
+    """Validate an OCIO configuration using the ociocheck CLI tool.
+
+    Unlike PyOpenColorIO's Config.validate() method, ociocheck thoroughly verifies that
+    all color transforms and referenced external LUT files exist and are loadable across
+    all display/view pairs, active, and inactive color spaces.
+
+    Returns:
+        tuple[bool, str]: (passed, output_or_error_message)
+    """
+    if os.path.isfile(config_path_or_content):
+        config_path = config_path_or_content
+        cleanup = False
+    else:
+        with tempfile.NamedTemporaryFile(
+            "w", suffix=".ocio", delete=False, encoding="utf-8"
+        ) as f:
+            f.write(config_path_or_content)
+            config_path = f.name
+        cleanup = True
+
+    try:
+        res = subprocess.run(
+            ["ociocheck", "--iconfig", config_path],
+            capture_output=True,
+            text=True,
+            check=False,
+        )  # nosec B603, B607
+        output = res.stdout if res.returncode == 0 else (res.stderr or res.stdout)
+        return (res.returncode == 0, output.strip())
+    except FileNotFoundError:
+        return (True, "ociocheck executable not found on system PATH; skipped.")
+    finally:
+        if cleanup and os.path.exists(config_path):
+            os.remove(config_path)
 
 
 def verify_dag_fidelity(

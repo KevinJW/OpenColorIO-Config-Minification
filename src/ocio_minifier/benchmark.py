@@ -4,10 +4,12 @@ import gc
 import gzip
 import os
 import statistics
-import subprocess  # nosec B404
+import sys
 import tempfile
 import time
 from typing import Any
+
+import PyOpenColorIO as ocio
 
 from ocio_minifier.models import BenchmarkResult
 from ocio_minifier.pipeline import MinificationPipeline
@@ -18,52 +20,23 @@ from ocio_minifier.transforms import (
     StripDescriptionsTransform,
     YamlAnchorsTransform,
 )
-from ocio_minifier.verification import HAS_OCIO, FidelityVerifier, ocio
+from ocio_minifier.verification import FidelityVerifier, validate_with_ociocheck
 
 
 def create_ocio_archive(content: Any, output_archive_path: str) -> None:
-    """Create an OCIO Archive (.ocioz) using PyOpenColorIO Config.archive() or ocioarchive CLI."""
-    native_archive_success = False
+    """Create an OCIO Archive (.ocioz) using PyOpenColorIO Config.archive()."""
     working_dir = os.path.dirname(os.path.abspath(output_archive_path))
-
-    if HAS_OCIO:
+    if not isinstance(content, str) and hasattr(content, "archive"):
+        orig_dir = content.getWorkingDir()
         try:
-            if not isinstance(content, str) and hasattr(content, "archive"):
-                orig_dir = content.getWorkingDir()
-                try:
-                    content.setWorkingDir(working_dir)
-                    content.archive(output_archive_path)
-                    native_archive_success = True
-                finally:
-                    content.setWorkingDir(orig_dir)
-            elif isinstance(content, str):
-                cfg = ocio.Config.CreateFromStream(content)
-                cfg.setWorkingDir(working_dir)
-                cfg.archive(output_archive_path)
-                native_archive_success = True
-        except Exception:
-            native_archive_success = False
-
-    if native_archive_success:
-        return
-
-    text_content = (
-        content.serialize() if hasattr(content, "serialize") else str(content)
-    )
-    with tempfile.NamedTemporaryFile(
-        "w", suffix=".ocio", delete=False, encoding="utf-8"
-    ) as f:
-        f.write(text_content)
-        tmp_config = f.name
-    try:
-        subprocess.run(
-            ["ocioarchive", output_archive_path, "--iconfig", tmp_config],
-            capture_output=True,
-            check=True,
-        )  # nosec B603, B607
-    finally:
-        if os.path.exists(tmp_config):
-            os.remove(tmp_config)
+            content.setWorkingDir(working_dir)
+            content.archive(output_archive_path)
+        finally:
+            content.setWorkingDir(orig_dir)
+    else:
+        cfg = ocio.Config.CreateFromStream(content)
+        cfg.setWorkingDir(working_dir)
+        cfg.archive(output_archive_path)
 
 
 def get_ocioz_archive_size(content: str) -> int:
@@ -91,8 +64,7 @@ class BenchmarkRunner:
 
     def _measure_timings_and_fidelity(
         self,
-        load_fn: Any | None,
-        cli_cmd: list[str] | None,
+        load_fn: Any,
         orig_cfg: Any | None = None,
         skip_verify: bool = False,
     ) -> tuple[
@@ -113,92 +85,56 @@ class BenchmarkRunner:
         max_delta = 0.0
         fidelity_pass = False
 
-        if HAS_OCIO and load_fn is not None:
+        try:
+            # 1. Warmup and structural validation
+            warm_cfg = load_fn()
+            warm_cfg.validate()
+            for _ in range(self.warmup_iterations - 1):
+                load_fn()
+
+            # 2. Repeated measurement iterations with GC isolation
+            timings: list[float] = []
+            last_cfg = None
+            gc.collect()
+            gc_was_enabled = gc.isenabled()
+            gc.disable()
             try:
-                # 1. Warmup and structural validation
-                warm_cfg = load_fn()
-                warm_cfg.validate()
-                for _ in range(self.warmup_iterations - 1):
-                    load_fn()
-
-                # 2. Repeated measurement iterations with GC isolation
-                timings: list[float] = []
-                last_cfg = None
-                gc.collect()
-                gc_was_enabled = gc.isenabled()
-                gc.disable()
-                try:
-                    for _ in range(self.timing_iterations):
-                        start = time.perf_counter()
-                        last_cfg = load_fn()
-                        end = time.perf_counter()
-                        timings.append((end - start) * 1000.0)
-                finally:
-                    if gc_was_enabled:
-                        gc.enable()
-
-                if self.statistic == "min":
-                    parse_time_ms = min(timings)
-                elif self.statistic == "mean":
-                    parse_time_ms = statistics.mean(timings)
-                else:  # default "median"
-                    parse_time_ms = statistics.median(timings)
-
-                parse_time_min_ms = min(timings)
-                parse_time_max_ms = max(timings)
-                parse_time_mean_ms = statistics.mean(timings)
-                parse_time_stddev_ms = (
-                    statistics.stdev(timings) if len(timings) > 1 else 0.0
-                )
-
-                min_cfg = last_cfg
-
-                if skip_verify:
-                    max_delta = 0.0
-                    fidelity_pass = min_cfg is not None
-                elif orig_cfg is not None and min_cfg is not None:
-                    res = self.verifier.verify(orig_cfg, min_cfg)
-                    max_delta = res.max_delta
-                    fidelity_pass = res.passed
-                else:
-                    fidelity_pass = min_cfg is not None
-            except Exception:
-                fidelity_pass = False
-        elif cli_cmd is not None:
-            try:
-                # Warmup
-                for _ in range(self.warmup_iterations):
-                    subprocess.run(
-                        cli_cmd,
-                        capture_output=True,
-                        text=True,
-                        check=False,
-                    )  # nosec B603, B607
-
-                timings_cli: list[float] = []
-                last_returncode = 1
                 for _ in range(self.timing_iterations):
                     start = time.perf_counter()
-                    res_proc = subprocess.run(
-                        cli_cmd,
-                        capture_output=True,
-                        text=True,
-                        check=False,
-                    )  # nosec B603, B607
+                    last_cfg = load_fn()
                     end = time.perf_counter()
-                    timings_cli.append((end - start) * 1000.0)
-                    last_returncode = res_proc.returncode
+                    timings.append((end - start) * 1000.0)
+            finally:
+                if gc_was_enabled:
+                    gc.enable()
 
-                parse_time_ms = statistics.median(timings_cli)
-                parse_time_min_ms = min(timings_cli)
-                parse_time_max_ms = max(timings_cli)
-                parse_time_mean_ms = statistics.mean(timings_cli)
-                parse_time_stddev_ms = (
-                    statistics.stdev(timings_cli) if len(timings_cli) > 1 else 0.0
-                )
-                fidelity_pass = last_returncode == 0
-            except Exception:
-                fidelity_pass = False
+            if self.statistic == "min":
+                parse_time_ms = min(timings)
+            elif self.statistic == "mean":
+                parse_time_ms = statistics.mean(timings)
+            else:  # default "median"
+                parse_time_ms = statistics.median(timings)
+
+            parse_time_min_ms = min(timings)
+            parse_time_max_ms = max(timings)
+            parse_time_mean_ms = statistics.mean(timings)
+            parse_time_stddev_ms = (
+                statistics.stdev(timings) if len(timings) > 1 else 0.0
+            )
+
+            min_cfg = last_cfg
+
+            if skip_verify:
+                max_delta = 0.0
+                fidelity_pass = min_cfg is not None
+            elif orig_cfg is not None and min_cfg is not None:
+                res = self.verifier.verify(orig_cfg, min_cfg)
+                max_delta = res.max_delta
+                fidelity_pass = res.passed
+            else:
+                fidelity_pass = min_cfg is not None
+        except Exception:
+            fidelity_pass = False
 
         return (
             parse_time_ms,
@@ -229,42 +165,19 @@ class BenchmarkRunner:
             baseline_text is not None and content == baseline_text
         )
 
-        if HAS_OCIO:
-            (
-                parse_time_ms,
-                parse_time_min_ms,
-                parse_time_max_ms,
-                parse_time_mean_ms,
-                parse_time_stddev_ms,
-                max_delta,
-                fidelity_pass,
-            ) = self._measure_timings_and_fidelity(
-                lambda: ocio.Config.CreateFromStream(content),
-                None,
-                orig_cfg,
-                skip_verify=is_identity,
-            )
-        else:
-            with tempfile.NamedTemporaryFile("w", suffix=".ocio", delete=False) as f:
-                f.write(content)
-                tmp_name = f.name
-            try:
-                (
-                    parse_time_ms,
-                    parse_time_min_ms,
-                    parse_time_max_ms,
-                    parse_time_mean_ms,
-                    parse_time_stddev_ms,
-                    max_delta,
-                    fidelity_pass,
-                ) = self._measure_timings_and_fidelity(
-                    None,
-                    ["ociocheck", "--file", tmp_name],
-                    orig_cfg,
-                )
-            finally:
-                if os.path.exists(tmp_name):
-                    os.remove(tmp_name)
+        (
+            parse_time_ms,
+            parse_time_min_ms,
+            parse_time_max_ms,
+            parse_time_mean_ms,
+            parse_time_stddev_ms,
+            max_delta,
+            fidelity_pass,
+        ) = self._measure_timings_and_fidelity(
+            lambda: ocio.Config.CreateFromStream(content),
+            orig_cfg,
+            skip_verify=is_identity,
+        )
 
         # Measure archive (.ocioz) load timing directly from ocioz file
         owned_td: tempfile.TemporaryDirectory[str] | None = None
@@ -281,13 +194,6 @@ class BenchmarkRunner:
                 else os.path.getsize(target_archive)
             )
 
-            load_archive_fn = (
-                (lambda: ocio.Config.CreateFromFile(target_archive))
-                if HAS_OCIO
-                else None
-            )
-            cli_archive_cmd = ["ociocheck", "--iconfig", target_archive]
-
             (
                 archive_parse_time_ms,
                 archive_parse_time_min_ms,
@@ -297,8 +203,7 @@ class BenchmarkRunner:
                 _,
                 _,
             ) = self._measure_timings_and_fidelity(
-                load_archive_fn,
-                cli_archive_cmd,
+                lambda: ocio.Config.CreateFromFile(target_archive),
                 orig_cfg=None,
             )
         finally:
@@ -338,11 +243,6 @@ class BenchmarkRunner:
             archive_data = f.read()
         gzip_size = len(gzip.compress(archive_data, compresslevel=9))
 
-        load_fn = (
-            (lambda: ocio.Config.CreateFromFile(archive_path)) if HAS_OCIO else None
-        )
-        cli_cmd = ["ociocheck", "--iconfig", archive_path]
-
         (
             parse_time_ms,
             parse_time_min_ms,
@@ -351,7 +251,10 @@ class BenchmarkRunner:
             parse_time_stddev_ms,
             max_delta,
             fidelity_pass,
-        ) = self._measure_timings_and_fidelity(load_fn, cli_cmd, orig_cfg)
+        ) = self._measure_timings_and_fidelity(
+            lambda: ocio.Config.CreateFromFile(archive_path),
+            orig_cfg,
+        )
 
         return BenchmarkResult(
             name=name,
@@ -376,31 +279,31 @@ class BenchmarkRunner:
     def run_suite(self, source_text: str) -> list[BenchmarkResult]:
         """Run all standard benchmark stages against source OCIO configuration text."""
         baseline_bytes = len(source_text.encode("utf-8"))
-        orig_cfg = None
-
-        if HAS_OCIO:
-            try:
-                orig_cfg = ocio.Config.CreateFromStream(source_text)
-                orig_cfg.validate()
-            except Exception as e:
-                raise ValueError(f"Failed to parse source config: {e}") from e
+        try:
+            orig_cfg = ocio.Config.CreateFromStream(source_text)
+            orig_cfg.validate()
+        except Exception as e:
+            raise ValueError(f"Failed to parse source config: {e}") from e
 
         results: list[BenchmarkResult] = []
 
         # Suppress repetitive OCIO INFO log outputs during benchmark loop
-        prev_log_level = None
-        if HAS_OCIO:
-            prev_log_level = ocio.GetLoggingLevel()
-            ocio.SetLoggingLevel(ocio.LOGGING_LEVEL_WARNING)
+        prev_log_level = ocio.GetLoggingLevel()
+        ocio.SetLoggingLevel(ocio.LOGGING_LEVEL_WARNING)
 
         try:
             with tempfile.TemporaryDirectory() as suite_td:
                 # 0. Baseline (Unmodified) - archive created once and reused for stage 10
                 baseline_archive = os.path.join(suite_td, "baseline.ocioz")
-                create_ocio_archive(
-                    orig_cfg if orig_cfg is not None else source_text,
-                    baseline_archive,
-                )
+                create_ocio_archive(orig_cfg, baseline_archive)
+
+                # Deep validation with ociocheck (verifies external LUTs and inactive spaces)
+                ociocheck_ok, ociocheck_msg = validate_with_ociocheck(baseline_archive)
+                if not ociocheck_ok:
+                    sys.stderr.write(
+                        f"Warning: ociocheck validation reported issues: {ociocheck_msg}\n"
+                    )
+
                 results.append(
                     self.benchmark_stage(
                         "Baseline (Unmodified)",
@@ -570,8 +473,7 @@ class BenchmarkRunner:
                     )
                 )
         finally:
-            if prev_log_level is not None and HAS_OCIO:
-                ocio.SetLoggingLevel(prev_log_level)
+            ocio.SetLoggingLevel(prev_log_level)
 
         return results
 
