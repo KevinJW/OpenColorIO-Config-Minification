@@ -125,18 +125,17 @@ class BenchmarkRunner:
                 timings: list[float] = []
                 last_cfg = None
                 gc.collect()
-                for _ in range(self.timing_iterations):
-                    gc.collect(0)
-                    gc_was_enabled = gc.isenabled()
-                    gc.disable()
-                    try:
+                gc_was_enabled = gc.isenabled()
+                gc.disable()
+                try:
+                    for _ in range(self.timing_iterations):
                         start = time.perf_counter()
                         last_cfg = load_fn()
                         end = time.perf_counter()
                         timings.append((end - start) * 1000.0)
-                    finally:
-                        if gc_was_enabled:
-                            gc.enable()
+                finally:
+                    if gc_was_enabled:
+                        gc.enable()
 
                 if self.statistic == "min":
                     parse_time_ms = min(timings)
