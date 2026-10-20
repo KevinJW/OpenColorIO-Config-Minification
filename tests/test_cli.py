@@ -169,3 +169,84 @@ def test_cli_minify_from_ocioz_input(tmp_path):
     assert ret == 0
     assert out_file.exists()
     assert out_file.stat().st_size > 0
+
+
+def test_cli_error_reading_file(tmp_path, capsys):
+    """CLI should return 1 and log error when input file cannot be read."""
+    ret = main([str(tmp_path)])
+    assert ret == 1
+    captured = capsys.readouterr()
+    assert "Error" in captured.err
+
+
+def test_cli_error_benchmark_failure(tmp_path, capsys):
+    """CLI benchmark mode should return 1 on invalid configuration YAML."""
+    invalid_file = tmp_path / "bad.ocio"
+    invalid_file.write_text("invalid: [yaml", encoding="utf-8")
+    ret = main([str(invalid_file), "--benchmark"])
+    assert ret == 1
+    captured = capsys.readouterr()
+    assert "Benchmark error" in captured.err
+
+
+def test_cli_verify_failure_exit(capsys):
+    """CLI --verify should return 1 when tolerance is violated."""
+    source_file = Path("configs/cg-config-v1.0.0_aces-v1.3_ocio-v2.1.ocio")
+    if not source_file.exists():
+        pytest.skip(f"Config {source_file} not found")
+
+    ret = main(
+        [
+            str(source_file),
+            "--preset",
+            "aggressive",
+            "--precision",
+            "3",
+            "--verify",
+            "--tolerance",
+            "1e-12",
+        ]
+    )
+    assert ret == 1
+    captured = capsys.readouterr()
+    assert "Fidelity Verification FAILED" in captured.err
+
+
+def test_cli_verify_and_diff_combined(capsys):
+    """Running CLI with both --verify and --diff should share parsed configs and succeed."""
+    source_file = Path("configs/cg-config-v1.0.0_aces-v1.3_ocio-v2.1.ocio")
+    if not source_file.exists():
+        pytest.skip(f"Config {source_file} not found")
+
+    ret = main([str(source_file), "--preset", "syntactic", "--verify", "--diff"])
+    assert ret == 0
+    captured = capsys.readouterr()
+    assert "Fidelity Verification PASSED" in captured.err
+    assert "Serialized configurations are semantically identical" in captured.err
+
+
+def test_cli_error_writing_output(capsys):
+    """CLI should return 1 when writing output file fails."""
+    source_file = Path("configs/cg-config-v1.0.0_aces-v1.3_ocio-v2.1.ocio")
+    if not source_file.exists():
+        pytest.skip(f"Config {source_file} not found")
+
+    ret = main([str(source_file), "-o", "/non_existent_dir_xyz/out.ocio"])
+    assert ret == 1
+    captured = capsys.readouterr()
+    assert "Error writing output" in captured.err
+
+
+def test_cli_main_module_execution():
+    """Ensure ocio_minifier.cli can be invoked as __main__."""
+    import runpy
+    import sys
+
+    old_argv = sys.argv
+    try:
+        sys.argv = ["ocio-minify", "--help"]
+        with pytest.raises(SystemExit) as exc:
+            runpy.run_module("ocio_minifier.cli", run_name="__main__")
+        assert exc.value.code == 0
+    finally:
+        sys.argv = old_argv

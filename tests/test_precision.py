@@ -100,3 +100,11 @@ def test_float_precision_invalid_float():
     yaml_src = "      matrix: [invalid, 1.0]\n"
     res = transform_float_precision(yaml_src, decimals=6)
     assert "matrix: [invalid, 1]" in res
+
+
+def test_float_precision_tiny_float_and_generic_vector():
+    """Tiny floats (<1e-4) format in scientific notation, and generic vector lengths are rounded."""
+    yaml_src = "    power: [0.0000123456, 1.2345678, 2.3456789, 3.4567890]\n"
+    res = transform_float_precision(yaml_src, decimals=6)
+    assert "1.2e-05" in res or "1.2e-5" in res
+    assert "1.234568" in res

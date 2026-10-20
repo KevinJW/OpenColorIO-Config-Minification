@@ -162,8 +162,10 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     minified = pipeline.run(source_content)
 
-    # Optional Fidelity Verification
-    if args.verify:
+    # Prepare parsed configs if needed for verification or diff
+    orig_cfg = None
+    cand_cfg = None
+    if args.verify or args.diff:
         try:
             orig_cfg = ocio.Config.CreateFromStream(source_content)
             orig_cfg.validate()
@@ -173,6 +175,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             sys.stderr.write(f"Configuration validation failed: {e}\n")
             return 1
 
+    # Optional Fidelity Verification
+    if args.verify:
+        assert orig_cfg is not None and cand_cfg is not None
         verifier = FidelityVerifier(tolerance=args.tolerance)
         res = verifier.verify(orig_cfg, cand_cfg)
         if not res.passed:
@@ -188,21 +193,14 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     # Optional Serialized Configuration Diff
     if args.diff:
-        try:
-            orig_cfg = ocio.Config.CreateFromStream(source_content)
-            orig_cfg.validate()
-            cand_cfg = ocio.Config.CreateFromStream(minified)
-            cand_cfg.validate()
-            diff_text = diff_serialized_configs(orig_cfg, cand_cfg)
-            if diff_text:
-                sys.stdout.write(diff_text)
-            else:
-                sys.stderr.write(
-                    "Serialized configurations are semantically identical (0 diff lines).\n"
-                )
-        except Exception as e:
-            sys.stderr.write(f"Diff generation failed: {e}\n")
-            return 1
+        assert orig_cfg is not None and cand_cfg is not None
+        diff_text = diff_serialized_configs(orig_cfg, cand_cfg)
+        if diff_text:
+            sys.stdout.write(diff_text)
+        else:
+            sys.stderr.write(
+                "Serialized configurations are semantically identical (0 diff lines).\n"
+            )
 
         if not args.output:
             return 0

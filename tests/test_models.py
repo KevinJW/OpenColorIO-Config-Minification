@@ -111,3 +111,54 @@ def test_benchmark_result_metrics():
     assert d["Fidelity"] == "PASS"
     assert d["Parse (ms)"] == "51.10 ± 1.20 ms"
     assert d["Archive Load (ms)"] == "65.50 ± 1.50 ms"
+
+
+def test_benchmark_result_edge_cases():
+    """Test boundary conditions: zero baseline, size increase, and missing stddev."""
+    # Zero baseline bytes
+    zero_bench = BenchmarkResult(
+        name="Zero Baseline",
+        raw_bytes=100,
+        baseline_bytes=0,
+        gzip_bytes=50,
+        parse_time_ms=10.0,
+        max_delta=0.0,
+        fidelity_passed=True,
+    )
+    assert zero_bench.reduction_pct == 0.0
+
+    # Size expansion (delta > 0) and missing stddev/archive timings
+    expanding_bench = BenchmarkResult(
+        name="Expansion",
+        raw_bytes=120000,
+        baseline_bytes=100000,
+        gzip_bytes=15000,
+        parse_time_ms=25.0,
+        max_delta=0.0,
+        fidelity_passed=True,
+        parse_time_mean_ms=None,
+        parse_time_stddev_ms=None,
+        archive_parse_time_ms=None,
+    )
+    assert expanding_bench.delta_bytes == 20000
+    assert "+20,000 B (+0.0%)" in expanding_bench.delta_str
+    assert expanding_bench.timing_str == "25.00 ms"
+    assert expanding_bench.archive_timing_str == "N/A"
+
+    d = expanding_bench.to_dict()
+    assert d["Parse (ms)"] == "25.00 ms"
+    assert d["Archive Load (ms)"] == "N/A"
+
+    # With archive parse time but without archive stddev
+    no_stddev_bench = BenchmarkResult(
+        name="No Stddev",
+        raw_bytes=100,
+        baseline_bytes=100,
+        gzip_bytes=50,
+        parse_time_ms=10.0,
+        max_delta=0.0,
+        fidelity_passed=True,
+        archive_parse_time_ms=15.0,
+        archive_parse_time_stddev_ms=None,
+    )
+    assert no_stddev_bench.archive_timing_str == "15.00 ms"

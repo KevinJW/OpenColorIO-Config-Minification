@@ -1,3 +1,5 @@
+import pytest
+
 from ocio_minifier.benchmark import BenchmarkRunner
 
 
@@ -115,3 +117,54 @@ def test_benchmark_identity_short_circuit(ocio_module, minimal_ocio_yaml):
     assert res.fidelity_passed is True
     # Verify method was never invoked due to identity short-circuit
     mock_verifier.verify.assert_not_called()
+
+
+def test_benchmark_runner_statistics_modes(minimal_ocio_yaml):
+    """BenchmarkRunner should support min and mean statistics modes."""
+    baseline_bytes = len(minimal_ocio_yaml.encode("utf-8"))
+
+    runner_min = BenchmarkRunner(statistic="min", timing_iterations=3)
+    res_min = runner_min.benchmark_stage("Min Stat", minimal_ocio_yaml, baseline_bytes)
+    assert res_min.parse_time_ms == res_min.parse_time_min_ms
+
+    runner_mean = BenchmarkRunner(statistic="mean", timing_iterations=3)
+    res_mean = runner_mean.benchmark_stage(
+        "Mean Stat", minimal_ocio_yaml, baseline_bytes
+    )
+    assert res_mean.parse_time_ms == res_mean.parse_time_mean_ms
+
+
+def test_benchmark_runner_exception_handling():
+    """BenchmarkRunner should handle load_fn exceptions cleanly."""
+    runner = BenchmarkRunner(timing_iterations=1)
+
+    def failing_loader():
+        raise RuntimeError("Parsing failed")
+
+    timings = runner._measure_timings_and_fidelity(failing_loader)
+    # fidelity_pass should be False
+    assert timings[6] is False
+
+
+def test_run_suite_invalid_yaml():
+    """run_suite should raise ValueError on invalid YAML."""
+    runner = BenchmarkRunner()
+    with pytest.raises(ValueError, match="Failed to parse source config"):
+        runner.run_suite("not: valid: [yaml")
+
+
+def test_run_suite_ociocheck_warning(minimal_ocio_yaml, capsys):
+    """When ociocheck reports an issue, a warning should be logged to stderr."""
+    from unittest.mock import patch
+
+    runner = BenchmarkRunner(warmup_iterations=1, timing_iterations=1)
+    with patch(
+        "ocio_minifier.benchmark.validate_with_ociocheck",
+        return_value=(False, "Simulated missing LUT"),
+    ):
+        runner.run_suite(minimal_ocio_yaml)
+    captured = capsys.readouterr()
+    assert (
+        "Warning: ociocheck validation reported issues: Simulated missing LUT"
+        in captured.err
+    )

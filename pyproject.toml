@@ -98,4 +98,4 @@ skips = ["B101", "B404"]  # allow assert statements and subprocess import
 minversion = "7.0"
 testpaths = ["tests"]
 python_files = ["test_*.py"]
-addopts = "-ra --strict-markers --cov=ocio_minifier --cov-fail-under=85"
+addopts = "-ra --strict-markers --cov=ocio_minifier --cov-fail-under=95"

@@ -302,3 +302,135 @@ colorspaces:
     passed, msg = validate_with_ociocheck(invalid_yaml)
     assert passed is False
     assert "non_existent_file" in msg.lower()
+
+
+def test_fidelity_verifier_diff_serialized_method(dag_test_yaml):
+    """FidelityVerifier.diff_serialized should delegate to diff_serialized_configs."""
+    import PyOpenColorIO as ocio
+
+    from ocio_minifier.verification import FidelityVerifier
+
+    orig = ocio.Config.CreateFromStream(dag_test_yaml)
+    cand = ocio.Config.CreateFromStream(dag_test_yaml)
+    verifier = FidelityVerifier()
+    diff = verifier.diff_serialized(orig, cand)
+    assert diff == ""
+
+
+def test_fidelity_verifier_none_configs():
+    """verify() should return failed result when either config is None."""
+    from ocio_minifier.verification import FidelityVerifier
+
+    verifier = FidelityVerifier()
+    res = verifier.verify(None, None)
+    assert res.passed is False
+    assert res.failures[0].identifier == "PyOpenColorIO"
+
+
+def test_fidelity_verifier_candidate_processor_failure(dag_test_yaml):
+    """When a candidate config has missing color space, ConversionFailure is captured."""
+    import PyOpenColorIO as ocio
+
+    from ocio_minifier.verification import FidelityVerifier
+
+    orig = ocio.Config.CreateFromStream(dag_test_yaml)
+    # Candidate missing TestSpace
+    cand_yaml = """ocio_profile_version: 2.0
+roles: {default: Raw, scene_linear: ACES2065-1}
+colorspaces:
+  - !<ColorSpace> {name: ACES2065-1}
+  - !<ColorSpace> {name: Raw, isdata: true}
+"""
+    cand = ocio.Config.CreateFromStream(cand_yaml)
+    verifier = FidelityVerifier()
+    res = verifier.verify(orig, cand)
+    assert res.passed is False
+    assert any("TestSpace" in f.identifier for f in res.failures)
+
+
+def test_fidelity_verifier_display_view_perturbation():
+    """Perturbing a ViewTransform matrix must trigger DisplayView ConversionFailure."""
+    import PyOpenColorIO as ocio
+
+    from ocio_minifier.verification import FidelityVerifier
+
+    yaml_orig = """ocio_profile_version: 2.0
+roles: {default: Raw, scene_linear: Linear}
+display_colorspaces:
+  - !<ColorSpace> {name: DispA, to_display_reference: !<MatrixTransform> {matrix: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]}}
+view_transforms:
+  - !<ViewTransform> {name: VT, from_scene_reference: !<MatrixTransform> {matrix: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]}}
+displays:
+  DisplayA: [!<View> {name: View, view_transform: VT, display_colorspace: DispA}]
+colorspaces:
+  - !<ColorSpace> {name: Linear, isdata: false}
+  - !<ColorSpace> {name: Raw, isdata: true}
+"""
+    yaml_cand = yaml_orig.replace(
+        "name: VT, from_scene_reference: !<MatrixTransform> {matrix: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]}",
+        "name: VT, from_scene_reference: !<MatrixTransform> {matrix: [1.5, 0, 0, 0, 0, 1.5, 0, 0, 0, 0, 1.5, 0, 0, 0, 0, 1]}",
+    )
+    orig = ocio.Config.CreateFromStream(yaml_orig)
+    cand = ocio.Config.CreateFromStream(yaml_cand)
+
+    verifier = FidelityVerifier(tolerance=1e-3)
+    res = verifier.verify(orig, cand)
+    assert res.passed is False
+    assert any(f.target_type == "DisplayView" for f in res.failures)
+
+
+def test_fidelity_verifier_candidate_view_exception():
+    """When a candidate config has broken display view, ConversionFailure is captured."""
+    import PyOpenColorIO as ocio
+
+    from ocio_minifier.verification import FidelityVerifier
+
+    orig = ocio.Config.CreateRaw()
+    orig.setRole(ocio.ROLE_SCENE_LINEAR, "Linear")
+    cs1 = ocio.ColorSpace()
+    cs1.setName("Linear")
+    orig.addColorSpace(cs1)
+    orig.addDisplayView("Disp", "View", "Linear")
+
+    cand = ocio.Config.CreateRaw()
+    cand.setRole(ocio.ROLE_SCENE_LINEAR, "Linear")
+    cand.addColorSpace(cs1)
+    cand.addDisplayView("Disp", "View", "NonExistentSpace")
+
+    verifier = FidelityVerifier()
+    res = verifier.verify(orig, cand)
+    assert res.passed is False
+    assert any(f.target_type == "DisplayView" for f in res.failures)
+
+
+def test_fidelity_verifier_serialized_diff_error(dag_test_yaml):
+    """When serialized diff fails, error message is recorded in serialized_diff field."""
+    from unittest.mock import patch
+
+    import PyOpenColorIO as ocio
+
+    from ocio_minifier.verification import FidelityVerifier
+
+    orig = ocio.Config.CreateFromStream(dag_test_yaml)
+    cand = ocio.Config.CreateFromStream(dag_test_yaml)
+
+    verifier = FidelityVerifier(include_serialized_diff=True)
+    with patch(
+        "ocio_minifier.verification.diff_serialized_configs",
+        side_effect=RuntimeError("Diff failed"),
+    ):
+        res = verifier.verify(orig, cand)
+        assert res.serialized_diff is not None
+        assert "Error generating serialization diff" in res.serialized_diff
+
+
+def test_validate_with_ociocheck_not_found():
+    """When ociocheck is missing from PATH, validate_with_ociocheck returns True with message."""
+    from unittest.mock import patch
+
+    from ocio_minifier.verification import validate_with_ociocheck
+
+    with patch("subprocess.run", side_effect=FileNotFoundError):
+        passed, msg = validate_with_ociocheck("any_content")
+        assert passed is True
+        assert "not found" in msg.lower()

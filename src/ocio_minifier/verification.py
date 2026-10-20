@@ -1,6 +1,5 @@
 """Mathematical DAG fidelity verification engine using PyOpenColorIO."""
 
-import contextlib
 import difflib
 import math
 import os
@@ -71,82 +70,46 @@ class FidelityVerifier:
             else (all_orig_cs[0].getName() if all_orig_cs else "Raw")
         )
 
-        fwd_outs: dict[str, list[tuple[float, float, float]] | Exception] = {}
-        for cs in all_orig_cs:
-            cs_name = cs.getName()
-            try:
-                proc = orig_cfg.getProcessor(ref_name, cs_name).getDefaultCPUProcessor()
-                fwd_outs[cs_name] = [proc.applyRGB(rgb) for rgb in self.pixel_grid]
-            except Exception as e:
-                fwd_outs[cs_name] = e
+        fwd_outs = {
+            cs.getName(): [
+                orig_cfg.getProcessor(ref_name, cs.getName())
+                .getDefaultCPUProcessor()
+                .applyRGB(rgb)
+                for rgb in self.pixel_grid
+            ]
+            for cs in all_orig_cs
+        }
 
-        inv_outs: dict[str, list[tuple[float, float, float]] | Exception] = {}
+        inv_outs: dict[str, list[tuple[float, float, float]]] = {}
         if self.check_inverse:
             for cs in all_orig_cs:
                 cs_name = cs.getName()
-                try:
-                    proc = orig_cfg.getProcessor(
-                        cs_name, ref_name
-                    ).getDefaultCPUProcessor()
-                    inv_outs[cs_name] = [proc.applyRGB(rgb) for rgb in self.pixel_grid]
-                except Exception as e:
-                    inv_outs[cs_name] = e
+                proc = orig_cfg.getProcessor(cs_name, ref_name).getDefaultCPUProcessor()
+                inv_outs[cs_name] = [proc.applyRGB(rgb) for rgb in self.pixel_grid]
 
-        view_outs: dict[
-            tuple[str, str], list[tuple[float, float, float]] | Exception
-        ] = {}
-        seen_combos: set[tuple[str | None, str | None, str | None, str | None]] = set()
+        view_outs: dict[tuple[str, str], list[tuple[float, float, float]]] = {}
+        seen_combos: set[tuple[str, str, str, str]] = set()
 
         for display in orig_cfg.getDisplays():
             for view in orig_cfg.getViews(display):
-                vt_name: str | None = None
-                view_cs_name: str | None = None
-                looks_name: str | None = None
-                rule_name: str | None = None
-
-                if hasattr(orig_cfg, "getDisplayViewTransformName"):
-                    with contextlib.suppress(Exception):
-                        vt_name = orig_cfg.getDisplayViewTransformName(display, view)
-
-                if hasattr(orig_cfg, "getResolvedDisplayViewColorSpaceName"):
-                    with contextlib.suppress(Exception):
-                        view_cs_name = orig_cfg.getResolvedDisplayViewColorSpaceName(
-                            display, view
-                        )
-                elif hasattr(orig_cfg, "getDisplayViewColorSpaceName"):
-                    with contextlib.suppress(Exception):
-                        view_cs_name = orig_cfg.getDisplayViewColorSpaceName(
-                            display, view
-                        )
-
-                if hasattr(orig_cfg, "getDisplayViewLooks"):
-                    with contextlib.suppress(Exception):
-                        looks_name = orig_cfg.getDisplayViewLooks(display, view)
-
-                if hasattr(orig_cfg, "getDisplayViewRule"):
-                    with contextlib.suppress(Exception):
-                        rule_name = orig_cfg.getDisplayViewRule(display, view)
-
-                combo_key = (
-                    (vt_name, view_cs_name, looks_name, rule_name)
-                    if (vt_name or view_cs_name)
-                    else None
+                vt_name = orig_cfg.getDisplayViewTransformName(display, view)
+                view_cs_name = orig_cfg.getResolvedDisplayViewColorSpaceName(
+                    display, view
                 )
-                if combo_key is not None and combo_key in seen_combos:
+                looks_name = orig_cfg.getDisplayViewLooks(display, view)
+                rule_name = orig_cfg.getDisplayViewRule(display, view)
+
+                combo_key = (vt_name, view_cs_name, looks_name, rule_name)
+                if combo_key in seen_combos:
                     continue
+                seen_combos.add(combo_key)
 
-                if combo_key is not None:
-                    seen_combos.add(combo_key)
-
-                try:
-                    proc = orig_cfg.getProcessor(
-                        ref_name, display, view, ocio.TRANSFORM_DIR_FORWARD
-                    ).getDefaultCPUProcessor()
-                    view_outs[(display, view)] = [
-                        proc.applyRGB(rgb) for rgb in self.pixel_grid
-                    ]
-                except Exception as e:
-                    view_outs[(display, view)] = e
+                proc = orig_cfg.getProcessor(
+                    ref_name, display, view, ocio.TRANSFORM_DIR_FORWARD
+                ).getDefaultCPUProcessor()
+                view_outs[(display, view)] = [
+                    proc.applyRGB(rgb) for rgb in self.pixel_grid
+                ]
 
         data = {
             "ref_name": ref_name,
@@ -187,22 +150,10 @@ class FidelityVerifier:
         evaluated_spaces = 0
         evaluated_views = 0
 
-        # 1. Evaluate forward (and optionally inverse) ColorSpace parity
+        # 1. Evaluate forward ColorSpace parity
         for cs_name in all_cs_names:
             evaluated_spaces += 1
-            orig_res = fwd_outs.get(cs_name)
-            if isinstance(orig_res, Exception):
-                failures.append(
-                    ConversionFailure(
-                        target_type="ColorSpace (Forward)",
-                        identifier=cs_name,
-                        input_rgb=(0.0, 0.0, 0.0),
-                        error_message=str(orig_res),
-                    )
-                )
-                continue
-            if orig_res is None:
-                continue
+            orig_res = fwd_outs[cs_name]
 
             try:
                 proc_cand = candidate_cfg.getProcessor(
@@ -213,9 +164,9 @@ class FidelityVerifier:
                     out_cand = proc_cand.applyRGB(rgb)
 
                     for c_orig, c_cand in zip(out_orig, out_cand, strict=True):
-                        if c_orig == c_cand:
-                            continue
-                        if math.isnan(c_orig) and math.isnan(c_cand):
+                        if c_orig == c_cand or (
+                            math.isnan(c_orig) and math.isnan(c_cand)
+                        ):
                             continue
                         diff = abs(c_orig - c_cand)
                         if diff > max_delta:
@@ -240,20 +191,8 @@ class FidelityVerifier:
                 )
 
             # Inverse transform: cs -> ref
-            if self.check_inverse:
-                orig_res_inv = inv_outs.get(cs_name)
-                if isinstance(orig_res_inv, Exception):
-                    failures.append(
-                        ConversionFailure(
-                            target_type="ColorSpace (Inverse)",
-                            identifier=cs_name,
-                            input_rgb=(0.0, 0.0, 0.0),
-                            error_message=str(orig_res_inv),
-                        )
-                    )
-                    continue
-                if orig_res_inv is None:
-                    continue
+            if self.check_inverse and cs_name in inv_outs:
+                orig_res_inv = inv_outs[cs_name]
 
                 try:
                     proc_cand_inv = candidate_cfg.getProcessor(
@@ -266,9 +205,9 @@ class FidelityVerifier:
                         out_cand = proc_cand_inv.applyRGB(rgb)
 
                         for c_orig, c_cand in zip(out_orig, out_cand, strict=True):
-                            if c_orig == c_cand:
-                                continue
-                            if math.isnan(c_orig) and math.isnan(c_cand):
+                            if c_orig == c_cand or (
+                                math.isnan(c_orig) and math.isnan(c_cand)
+                            ):
                                 continue
                             diff = abs(c_orig - c_cand)
                             if diff > max_delta:
@@ -295,16 +234,6 @@ class FidelityVerifier:
         # 2. Evaluate Displays and Views parity
         for (display, view), orig_res_view in view_outs.items():
             evaluated_views += 1
-            if isinstance(orig_res_view, Exception):
-                failures.append(
-                    ConversionFailure(
-                        target_type="DisplayView",
-                        identifier=f"{display}/{view}",
-                        input_rgb=(0.0, 0.0, 0.0),
-                        error_message=str(orig_res_view),
-                    )
-                )
-                continue
 
             try:
                 proc_cand = candidate_cfg.getProcessor(
@@ -315,9 +244,9 @@ class FidelityVerifier:
                     out_cand = proc_cand.applyRGB(rgb)
 
                     for c_orig, c_cand in zip(out_orig, out_cand, strict=True):
-                        if c_orig == c_cand:
-                            continue
-                        if math.isnan(c_orig) and math.isnan(c_cand):
+                        if c_orig == c_cand or (
+                            math.isnan(c_orig) and math.isnan(c_cand)
+                        ):
                             continue
                         diff = abs(c_orig - c_cand)
                         if diff > max_delta:

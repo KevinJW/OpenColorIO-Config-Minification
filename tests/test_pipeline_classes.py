@@ -25,6 +25,8 @@ def test_pipeline_composition(minimal_ocio_yaml):
     assert len(pipeline) == 2
     assert pipeline.is_lossy is True
     assert "Strip Descriptions (Lossy)" in pipeline.transform_names
+    assert "<MinificationPipeline" in repr(pipeline)
+    assert list(iter(pipeline)) == pipeline.transforms
 
 
 def test_pipeline_presets():

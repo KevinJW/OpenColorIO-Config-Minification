@@ -18,7 +18,7 @@ This repository uses modern Python packaging and strict development standards. W
 ## 3. Testing & Coverage
 
 - **Framework**: Use `pytest`.
-- **Coverage**: The repository enforces a strict test coverage minimum (>= 85%).
+- **Coverage**: The repository enforces a strict test coverage minimum (>= 95%).
 - **Rules**:
   - Every new transform must have a dedicated unit test file in `tests/`.
   - Transforms must be tested for protocol conformance, idempotency, and parity via `tests/test_transforms.py`.
