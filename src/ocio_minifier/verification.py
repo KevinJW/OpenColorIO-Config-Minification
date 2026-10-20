@@ -1,5 +1,6 @@
 """Mathematical DAG fidelity verification engine using PyOpenColorIO."""
 
+import contextlib
 import difflib
 import math
 from typing import Any
@@ -97,8 +98,49 @@ class FidelityVerifier:
         view_outs: dict[
             tuple[str, str], list[tuple[float, float, float]] | Exception
         ] = {}
+        seen_combos: set[tuple[str | None, str | None, str | None, str | None]] = set()
+
         for display in orig_cfg.getDisplays():
             for view in orig_cfg.getViews(display):
+                vt_name: str | None = None
+                view_cs_name: str | None = None
+                looks_name: str | None = None
+                rule_name: str | None = None
+
+                if hasattr(orig_cfg, "getDisplayViewTransformName"):
+                    with contextlib.suppress(Exception):
+                        vt_name = orig_cfg.getDisplayViewTransformName(display, view)
+
+                if hasattr(orig_cfg, "getResolvedDisplayViewColorSpaceName"):
+                    with contextlib.suppress(Exception):
+                        view_cs_name = orig_cfg.getResolvedDisplayViewColorSpaceName(
+                            display, view
+                        )
+                elif hasattr(orig_cfg, "getDisplayViewColorSpaceName"):
+                    with contextlib.suppress(Exception):
+                        view_cs_name = orig_cfg.getDisplayViewColorSpaceName(
+                            display, view
+                        )
+
+                if hasattr(orig_cfg, "getDisplayViewLooks"):
+                    with contextlib.suppress(Exception):
+                        looks_name = orig_cfg.getDisplayViewLooks(display, view)
+
+                if hasattr(orig_cfg, "getDisplayViewRule"):
+                    with contextlib.suppress(Exception):
+                        rule_name = orig_cfg.getDisplayViewRule(display, view)
+
+                combo_key = (
+                    (vt_name, view_cs_name, looks_name, rule_name)
+                    if (vt_name or view_cs_name)
+                    else None
+                )
+                if combo_key is not None and combo_key in seen_combos:
+                    continue
+
+                if combo_key is not None:
+                    seen_combos.add(combo_key)
+
                 try:
                     proc = orig_cfg.getProcessor(
                         ref_name, display, view, ocio.TRANSFORM_DIR_FORWARD
