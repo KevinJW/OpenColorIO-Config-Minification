@@ -85,7 +85,7 @@ class BenchmarkRunner:
         statistic: str = "median",
     ):
         self.verifier = verifier or FidelityVerifier()
-        self.warmup_iterations = max(0, warmup_iterations)
+        self.warmup_iterations = max(1, warmup_iterations)
         self.timing_iterations = max(1, timing_iterations)
         self.statistic = statistic
 
@@ -115,14 +115,11 @@ class BenchmarkRunner:
 
         if HAS_OCIO and load_fn is not None:
             try:
-                # 1. Warmup and validation
-                if self.warmup_iterations > 0:
-                    for _ in range(self.warmup_iterations):
-                        warm_cfg = load_fn()
-                        warm_cfg.validate()
-                else:
-                    initial_cfg = load_fn()
-                    initial_cfg.validate()
+                # 1. Warmup and structural validation
+                warm_cfg = load_fn()
+                warm_cfg.validate()
+                for _ in range(self.warmup_iterations - 1):
+                    load_fn()
 
                 # 2. Repeated measurement iterations with GC isolation
                 timings: list[float] = []
